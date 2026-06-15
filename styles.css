@@ -6,7 +6,9 @@ html,
 body {
   margin: 0;
   min-height: 100%;
-  background: #050614;
+  background:
+    radial-gradient(circle at 50% 0%, #1b2856 0 12%, transparent 34%),
+    linear-gradient(180deg, #050614 0%, #071126 56%, #03040b 100%);
   color: #f9b33d;
   font-family: "Courier New", monospace;
 }
@@ -27,7 +29,16 @@ h1,
 .hint {
   margin: 0;
   text-align: center;
-  text-shadow: 3px 3px 0 #23142f;
+  text-shadow: 3px 3px 0 #23142f, 0 0 18px #315aa0;
+}
+
+h1 {
+  letter-spacing: 0.08em;
+}
+
+.hint {
+  color: #d59635;
+  max-width: 1024px;
 }
 
 canvas {
@@ -37,5 +48,9 @@ canvas {
   image-rendering: crisp-edges;
   background: #090d24;
   border: 4px solid #35284a;
-  box-shadow: 0 0 0 4px #070711, 0 18px 60px #000b;
+  box-shadow:
+    0 0 0 4px #070711,
+    0 0 0 8px #151023,
+    0 18px 60px #000b,
+    0 0 48px #163e84aa;
 }
