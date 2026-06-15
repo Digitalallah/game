@@ -1,0 +1,41 @@
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  min-height: 100%;
+  background: #050614;
+  color: #f9b33d;
+  font-family: "Courier New", monospace;
+}
+
+body {
+  display: grid;
+  place-items: center;
+  padding: 18px;
+}
+
+.game-shell {
+  display: grid;
+  gap: 10px;
+  justify-items: center;
+}
+
+h1,
+.hint {
+  margin: 0;
+  text-align: center;
+  text-shadow: 3px 3px 0 #23142f;
+}
+
+canvas {
+  width: min(1024px, 96vw, 96vh);
+  height: min(1024px, 96vw, 96vh);
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+  background: #090d24;
+  border: 4px solid #35284a;
+  box-shadow: 0 0 0 4px #070711, 0 18px 60px #000b;
+}
