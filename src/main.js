@@ -444,7 +444,7 @@ function updateCrabs(dt) {
     if (c.jumpPrep > 0) { c.jumpPrep -= dt; if (c.jumpPrep <= 0) { c.vy = -4.4; c.grounded = false; c.jumpCd = 2.2 + Math.random() * 2.8; } }
     c.x += c.vx;
     if (!c.grounded) { c.vy += GRAVITY * 0.75; c.y += c.vy; if (c.y >= platforms[0].y - c.h) { c.y = platforms[0].y - c.h; c.vy = 0; c.grounded = true; c.squash = 0.18; } }
-    if (!c.hit && !state.player.inv && overlaps(state.player, crabHitbox(c))) { c.hit = true; hurtPlayer(); state.player.vx += c.dir * 2.2; }
+    if (!c.hit && !state.player.inv && overlaps(state.player, crabHitbox(c))) { c.hit = true; hurtPlayer(1); state.player.vx += c.dir * 2.2; }
   }
   state.crabs = state.crabs.filter((c) => c.x > -70 && c.x < W + 70 && !c.hit);
 }
@@ -461,10 +461,10 @@ function updateJuice(dt) {
   state.sparks = state.sparks.filter((s) => s.life > 0);
 }
 
-function hurtPlayer() {
+function hurtPlayer(damage = 1) {
   const p = state.player; if (p.inv > 0) return;
   haptic("notification", "error");
-  state.lives -= 1; p.inv = 1.5; p.hurt = 0.45; p.vy = -4; p.x = Math.max(8, p.x - p.facing * 10); state.cameraShake = 0.35; state.screenFlash = 0.22; addSparks(p.x + 8, p.y + 14, "#ff7a45", 10);
+  state.lives -= damage; p.inv = 1.5; p.hurt = 0.45; p.vy = -4; p.x = Math.max(8, p.x - p.facing * 10); state.cameraShake = 0.35; state.screenFlash = 0.22; addSparks(p.x + 8, p.y + 14, "#ff7a45", 10);
   if (state.lives <= 0) { state.gameOver = true; clearInput(); state.best = Math.max(state.best, Math.floor(state.score)); bestScore.textContent = String(state.best); localStorage.setItem("kotogrozaBest", state.best); syncUi(); }
 }
 
@@ -606,11 +606,9 @@ function drawCrab(c) {
   ctx.translate(Math.round(c.x + c.w / 2), Math.round(c.y));
   ctx.scale(sx, 1);
   const draw = (img, x, y, w = 42, h = 27) => { if (img.complete && img.naturalWidth > 0) ctx.drawImage(img, Math.round(x), Math.round(y), w, h); };
-  draw(images.crab.leftLeg, -21, 3 + walk, 42, 27);
-  draw(images.crab.rightLeg, -21, 3 - walk, 42, 27);
+  draw(images.crab.leftLeg, -21, 4 + walk, 42, 27);
+  draw(images.crab.rightLeg, -21, 4 - walk, 42, 27);
   draw(images.crab.body, -21, bodyBob, 42, 27);
-  draw(images.crab.leftLeg, -21, 5 - walk, 42, 27);
-  draw(images.crab.rightLeg, -21, 5 + walk, 42, 27);
   draw(images.crab.leftClaw, -23 - claw, -1 + bodyBob + claw / 2, 42, 27);
   draw(images.crab.rightClaw, -19 + claw, -1 + bodyBob - claw / 2, 42, 27);
   if (c.flash > 0) { ctx.fillStyle = "rgba(210,245,255,.75)"; ctx.fillRect(-22, 0, 44, 28); }
