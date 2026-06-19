@@ -1,5 +1,8 @@
 // «Котогроза» — маленький 8-bit platformer без библиотек.
 const canvas = document.getElementById("game");
+const startScreen = document.getElementById("start-screen");
+const playButton = document.getElementById("play-button");
+const bestScore = document.getElementById("best-score");
 const ctx = canvas.getContext("2d");
 ctx.imageSmoothingEnabled = false;
 
@@ -8,6 +11,31 @@ const H = 256;
 const SCALE = 4;
 const GRAVITY = 0.34;
 const keys = new Set();
+const touchControls = { left: false, right: false, jump: false };
+const telegramWebApp = window.Telegram?.WebApp;
+
+function initTelegram() {
+  if (!telegramWebApp) return;
+  try {
+    telegramWebApp.ready();
+    telegramWebApp.expand();
+  } catch (error) {
+    console.warn("Telegram WebApp init failed", error);
+  }
+}
+
+function haptic(type, style) {
+  const feedback = telegramWebApp?.HapticFeedback;
+  if (!feedback) return;
+  try {
+    if (type === "impact" && typeof feedback.impactOccurred === "function") feedback.impactOccurred(style);
+    if (type === "notification" && typeof feedback.notificationOccurred === "function") feedback.notificationOccurred(style);
+  } catch (error) {
+    console.warn("Telegram haptic feedback failed", error);
+  }
+}
+
+initTelegram();
 
 const images = {
   background: loadImage("assets/back.png"),
@@ -54,7 +82,9 @@ const state = {
   riskText: 0,
   rain: [],
   cameraShake: 0,
-  screenFlash: 0
+  screenFlash: 0,
+  started: false,
+  hiddenPaused: false
 };
 
 function reset() {
@@ -72,6 +102,7 @@ function reset() {
   state.riskText = 0;
   state.cameraShake = 0;
   state.screenFlash = 0;
+  state.hiddenPaused = false;
   spawnFish(false);
 }
 
@@ -82,10 +113,60 @@ for (let i = 0; i < 115; i++) {
 addEventListener("keydown", (e) => {
   if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", " "].includes(e.key)) e.preventDefault();
   keys.add(e.key.toLowerCase());
-  if (e.key.toLowerCase() === "p" && !state.gameOver) state.paused = !state.paused;
-  if (e.key.toLowerCase() === "r") reset();
+  if (e.key.toLowerCase() === "p" && state.started && !state.gameOver) state.paused = !state.paused;
+  if (e.key.toLowerCase() === "r") { reset(); startGame(); }
 });
 addEventListener("keyup", (e) => keys.delete(e.key.toLowerCase()));
+
+function clearInput() {
+  keys.clear();
+  for (const key of Object.keys(touchControls)) touchControls[key] = false;
+  document.querySelectorAll(".touch-button.is-active").forEach((button) => button.classList.remove("is-active"));
+}
+
+function setTouchControl(control, active, button) {
+  if (!(control in touchControls)) return;
+  touchControls[control] = active;
+  button.classList.toggle("is-active", active);
+}
+
+document.querySelectorAll("[data-control]").forEach((button) => {
+  const control = button.dataset.control;
+  button.addEventListener("pointerdown", (event) => {
+    event.preventDefault();
+    button.setPointerCapture?.(event.pointerId);
+    setTouchControl(control, true, button);
+  });
+  for (const eventName of ["pointerup", "pointercancel", "lostpointercapture"]) {
+    button.addEventListener(eventName, (event) => {
+      event.preventDefault();
+      setTouchControl(control, false, button);
+    });
+  }
+});
+
+addEventListener("blur", clearInput);
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) {
+    if (state.started && !state.gameOver) { state.paused = true; state.hiddenPaused = true; }
+    clearInput();
+  } else if (state.hiddenPaused) {
+    state.paused = true;
+    state.hiddenPaused = false;
+  }
+});
+
+function startGame() {
+  state.started = true;
+  state.paused = false;
+  startScreen.hidden = true;
+  canvas.focus?.();
+}
+
+playButton.addEventListener("click", () => {
+  reset();
+  startGame();
+});
 
 function overlaps(a, b) {
   return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
@@ -109,7 +190,7 @@ function startLightning() {
 }
 
 function update(dt) {
-  if (state.paused || state.gameOver) return;
+  if (!state.started || state.paused || state.gameOver) return;
   state.time += dt; state.score += dt * 3;
   state.riskText = Math.max(0, state.riskText - dt);
   state.cameraShake = Math.max(0, state.cameraShake - dt);
@@ -120,14 +201,15 @@ function update(dt) {
   updatePlayer(dt); updateFishes(); updateLightning(dt); updateJuice(dt);
   if (!state.fishes.some((f) => !f.risky) && Math.random() < 0.012) spawnFish(false);
   state.best = Math.max(state.best, Math.floor(state.score));
+  bestScore.textContent = String(state.best);
   localStorage.setItem("kotogrozaBest", state.best);
 }
 
 function updatePlayer(dt) {
   const p = state.player;
-  const left = keys.has("arrowleft") || keys.has("a");
-  const right = keys.has("arrowright") || keys.has("d");
-  const jump = keys.has(" ") || keys.has("arrowup") || keys.has("w");
+  const left = keys.has("arrowleft") || keys.has("a") || touchControls.left;
+  const right = keys.has("arrowright") || keys.has("d") || touchControls.right;
+  const jump = keys.has(" ") || keys.has("arrowup") || keys.has("w") || touchControls.jump;
   p.vx = (right - left) * 1.55;
   if (p.vx) p.facing = Math.sign(p.vx);
   if (jump && p.grounded) { p.vy = -6.2; p.grounded = false; }
@@ -147,8 +229,8 @@ function updateFishes() {
     f.bob += 0.09;
     if (f.alive && overlaps(state.player, f)) {
       f.alive = false; state.player.collect = 0.22;
-      if (f.risky) { const late = state.lightning && state.lightning.warning < 0.35; const pts = late ? 100 : 50; state.score += pts; if (late) state.riskText = 1; addPopup(`+${pts}`, f.x - 2, f.y - 4, "#ffcf4a"); addSparks(f.x + 5, f.y + 3, "#ffcf4a", 12); }
-      else { state.score += 10; addPopup("+10", f.x - 2, f.y - 4, "#7ee8ff"); addSparks(f.x + 5, f.y + 3, "#7ee8ff", 7); }
+      if (f.risky) { haptic("notification", "success"); const late = state.lightning && state.lightning.warning < 0.35; const pts = late ? 100 : 50; state.score += pts; if (late) state.riskText = 1; addPopup(`+${pts}`, f.x - 2, f.y - 4, "#ffcf4a"); addSparks(f.x + 5, f.y + 3, "#ffcf4a", 12); }
+      else { haptic("impact", "light"); state.score += 10; addPopup("+10", f.x - 2, f.y - 4, "#7ee8ff"); addSparks(f.x + 5, f.y + 3, "#7ee8ff", 7); }
     }
   }
   state.fishes = state.fishes.filter((f) => f.alive);
@@ -157,7 +239,7 @@ function updateFishes() {
 function updateLightning(dt) {
   if (!state.lightning) { state.nextLightning -= dt; if (state.nextLightning <= 0) startLightning(); return; }
   const l = state.lightning; l.flicker += dt;
-  if (l.warning > 0) { l.warning -= dt; if (l.warning <= 0) state.screenFlash = 0.45; return; }
+  if (l.warning > 0) { l.warning -= dt; if (l.warning <= 0) { state.screenFlash = 0.45; haptic("impact", "heavy"); } return; }
   l.strike += dt; state.cameraShake = 0.18;
   const bolt = { x: l.x - l.w / 2, y: 0, w: l.w, h: l.y + 18 };
   if (!l.hit && overlaps(state.player, bolt)) { l.hit = true; hurtPlayer(); }
@@ -173,14 +255,16 @@ function updateJuice(dt) {
 
 function hurtPlayer() {
   const p = state.player; if (p.inv > 0) return;
+  haptic("notification", "error");
   state.lives -= 1; p.inv = 1.5; p.hurt = 0.45; p.vy = -4; p.x = Math.max(8, p.x - p.facing * 10); state.cameraShake = 0.35; state.screenFlash = 0.22; addSparks(p.x + 8, p.y + 14, "#ff7a45", 10);
-  if (state.lives <= 0) { state.gameOver = true; state.best = Math.max(state.best, Math.floor(state.score)); localStorage.setItem("kotogrozaBest", state.best); }
+  if (state.lives <= 0) { state.gameOver = true; state.best = Math.max(state.best, Math.floor(state.score)); bestScore.textContent = String(state.best); localStorage.setItem("kotogrozaBest", state.best); }
 }
 
 function draw() {
   ctx.save(); ctx.setTransform(SCALE, 0, 0, SCALE, 0, 0); ctx.clearRect(0, 0, W, H);
   if (state.cameraShake > 0) ctx.translate((Math.random() - 0.5) * 2, (Math.random() - 0.5) * 2);
   drawBackground(); drawPlatforms(); drawFishes(); drawLightning(); drawSparks(); drawCat(state.player); drawRainSplashes(); drawPopups(); drawHud(); drawFlash();
+  if (!state.started) drawCenterText("КОТОГРОЗА", "НАЖМИТЕ ИГРАТЬ");
   if (state.paused) drawCenterText("ПАУЗА", "P — ПРОДОЛЖИТЬ");
   if (state.gameOver) drawCenterText("ИГРА ОКОНЧЕНА", "R — ЗАНОВО");
   if (state.riskText > 0) drawPixelText("РИСК!", 106, 104, "#ffcf4a", 2);
@@ -364,4 +448,6 @@ function drawCenterText(title, subtitle) { ctx.fillStyle = "rgba(0,0,0,.72)"; ct
 
 let last = performance.now();
 function frame(now) { const dt = Math.min(0.033, (now - last) / 1000); last = now; update(dt); requestAnimationFrame(frame); }
-reset(); requestAnimationFrame(frame); draw();
+reset();
+bestScore.textContent = String(state.best);
+requestAnimationFrame(frame); draw();
