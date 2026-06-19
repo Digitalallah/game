@@ -162,7 +162,7 @@ function hurtPlayer() {
 function draw() {
   ctx.save(); ctx.setTransform(SCALE, 0, 0, SCALE, 0, 0); ctx.clearRect(0, 0, W, H);
   if (state.cameraShake > 0) ctx.translate((Math.random() - 0.5) * 2, (Math.random() - 0.5) * 2);
-  drawBackground(); drawPlatforms(); drawFishes(); drawLightning(); drawSparks(); drawCat(state.player); drawPopups(); drawHud(); drawFlash();
+  drawBackground(); drawPlatforms(); drawFishes(); drawLightning(); drawSparks(); drawCat(state.player); drawRainSplashes(); drawPopups(); drawHud(); drawFlash();
   if (state.paused) drawCenterText("ПАУЗА", "P — ПРОДОЛЖИТЬ");
   if (state.gameOver) drawCenterText("ИГРА ОКОНЧЕНА", "R — ЗАНОВО");
   if (state.riskText > 0) drawPixelText("РИСК!", 106, 104, "#ffcf4a", 2);
@@ -170,14 +170,93 @@ function draw() {
 }
 
 function drawBackground() {
-  ctx.fillStyle = "#071126"; ctx.fillRect(0, 0, W, H);
-  for (let y = 34; y < 76; y += 9) { ctx.fillStyle = y % 18 ? "#162551" : "#23376d"; for (let x = -20; x < W; x += 34) ctx.fillRect(x + ((y * 3 + state.time * 6) % 34), y, 30, 7); }
-  ctx.fillStyle = "#0b1d3b"; for (let x = 0; x < W; x += 14) { const h = 18 + ((x * 5) % 24); ctx.fillRect(x, 155 - h, 12, h); }
-  ctx.fillStyle = "#071326"; for (let x = 0; x < W; x += 20) { const h = 28 + ((x * 7) % 36); ctx.fillRect(x, 158 - h, 16, h); ctx.fillStyle = "#d79628"; if (x % 40 === 0) ctx.fillRect(x + 6, 146 - h, 2, 3); if (x % 60 === 0) ctx.fillRect(x + 10, 134 - h, 2, 3); ctx.fillStyle = "#071326"; }
-  ctx.fillStyle = "#14381f"; for (let x = -6; x < W; x += 18) ctx.fillRect(x, 158 - ((x * 3) % 12), 22, 12);
+  // Грозовой фон: стилистически повторяет референс сцены, но оставляет платформы читаемыми.
+  const flash = state.lightning && state.lightning.warning <= 0 ? 0.18 : 0;
+  ctx.fillStyle = "#061026"; ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = "#0a1d43"; ctx.fillRect(0, 48, W, 118);
+  ctx.fillStyle = `rgba(37, 94, 168, ${0.18 + flash})`; ctx.fillRect(0, 74, W, 70);
+
+  drawStormClouds(flash);
+  drawSkyline(0, 156, "#092044", "#c77b1c", 0.35);
+  drawSkyline(11, 162, "#050b20", "#d99628", 0.72);
+
+  // Далёкие мокрые деревья / кусты с тёмно-зелёной полосой как в mood reference.
+  ctx.fillStyle = "#0b3328";
+  for (let x = -10; x < W; x += 17) {
+    const h = 7 + ((x * 5) & 9);
+    ctx.fillRect(x, 158 - h, 19, h);
+    ctx.fillStyle = "#0f4a35"; ctx.fillRect(x + 4, 154 - h, 9, 2); ctx.fillStyle = "#0b3328";
+  }
+
   drawLamp(22, 155); drawLamp(220, 155);
-  ctx.fillStyle = "#1f6bb7"; for (const r of state.rain) { r.y += r.s; r.x -= 0.45 + r.layer * 0.3; if (r.y > H) { r.y = -8; r.x = Math.random() * W; } ctx.globalAlpha = 0.45 + r.layer * 0.35; ctx.fillRect(r.x, r.y, 1, 5 + r.layer * 5); } ctx.globalAlpha = 1;
-  ctx.fillStyle = "#12366a"; for (let x = 0; x < W; x += 18) ctx.fillRect(x, 230 + ((x * 9) % 6), 10, 1);
+  drawAmbientLightning();
+  drawRain();
+  drawWaterReflections();
+}
+
+function drawStormClouds(flash) {
+  const bands = [
+    { y: 18, c: "#102456", hi: "#244681", step: 18, off: 0 },
+    { y: 31, c: "#17346d", hi: "#315b9f", step: 22, off: 8 },
+    { y: 44, c: "#0d214b", hi: "#203f80", step: 20, off: 3 }
+  ];
+  for (const b of bands) {
+    for (let x = -28; x < W + 28; x += b.step) {
+      const yy = b.y + Math.sin((x + state.time * 5 + b.off) * 0.08) * 4;
+      ctx.fillStyle = b.c; ctx.fillRect(x, yy, b.step + 10, 10); ctx.fillRect(x + 6, yy - 7, b.step - 4, 8);
+      ctx.fillStyle = flash ? "#69b8ff" : b.hi; ctx.globalAlpha = 0.34 + flash; ctx.fillRect(x + 4, yy + 8, b.step, 3); ctx.globalAlpha = 1;
+    }
+  }
+}
+
+function drawSkyline(offset, base, color, win, alpha) {
+  ctx.globalAlpha = alpha; ctx.fillStyle = color;
+  for (let x = -offset; x < W; x += 15) {
+    const h = 22 + ((x * 7 + offset * 9) % 42);
+    ctx.fillRect(x, base - h, 12, h);
+    ctx.fillRect(x + 3, base - h - ((x + offset) % 3 === 0 ? 6 : 0), 6, 6);
+    ctx.fillStyle = win;
+    if ((x + offset) % 30 === 0) ctx.fillRect(x + 3, base - h + 9, 2, 3);
+    if ((x + offset) % 45 === 0) ctx.fillRect(x + 8, base - h + 19, 2, 3);
+    if ((x + offset) % 60 === 0) ctx.fillRect(x + 5, base - h + 31, 2, 3);
+    ctx.fillStyle = color;
+  }
+  ctx.globalAlpha = 1;
+}
+
+function drawAmbientLightning() {
+  const active = state.lightning && state.lightning.warning <= 0;
+  if (!active) return;
+  ctx.fillStyle = "rgba(130,205,255,.20)"; ctx.fillRect(178, 0, 34, 221);
+  ctx.fillStyle = "#eef9ff";
+  let x = 194;
+  for (let y = 8; y < 224; y += 13) { const nx = 194 + Math.sin(y * 0.21 + state.time * 8) * 9; ctx.fillRect(Math.min(x, nx), y, Math.abs(nx - x) + 3, 8); x = nx; }
+  ctx.fillStyle = "#48a7ff"; ctx.fillRect(187, 35, 18, 3); ctx.fillRect(190, 202, 18, 3);
+}
+
+function drawRain() {
+  ctx.fillStyle = "#1f8ce8";
+  for (const r of state.rain) {
+    r.y += r.s; r.x -= 0.55 + r.layer * 0.45;
+    if (r.y > H) { r.y = -8; r.x = Math.random() * W; }
+    ctx.globalAlpha = 0.42 + r.layer * 0.38;
+    ctx.fillRect(r.x, r.y, 1, 5 + r.layer * 6);
+    if (r.layer > 0.72) ctx.fillRect(r.x - 1, r.y + 4, 1, 3);
+  }
+  ctx.globalAlpha = 1;
+}
+
+function drawWaterReflections() {
+  ctx.fillStyle = "#0b3b75";
+  for (let x = 0; x < W; x += 12) ctx.fillRect(x, 229 + ((x * 9 + Math.floor(state.time * 16)) % 7), 8, 1);
+  ctx.fillStyle = "#ffc23b"; ctx.globalAlpha = .55;
+  for (const x of [22, 220]) { ctx.fillRect(x - 3, 205, 8, 2); ctx.fillRect(x - 7, 214, 16, 2); ctx.fillRect(x - 4, 224, 10, 1); }
+  ctx.globalAlpha = 1;
+}
+
+function drawRainSplashes() {
+  ctx.fillStyle = "rgba(126, 232, 255, .55)";
+  for (let x = 2; x < W; x += 19) if ((x + Math.floor(state.time * 24)) % 3 === 0) ctx.fillRect(x, 221, 4, 1);
 }
 function drawLamp(x, y) { ctx.fillStyle = "rgba(255,194,55,.16)"; ctx.fillRect(x - 7, y + 1, 17, 35); ctx.fillStyle = "#22182b"; ctx.fillRect(x + 2, y + 8, 2, 34); ctx.fillRect(x - 2, y + 40, 10, 3); ctx.fillStyle = "#ffd34a"; ctx.fillRect(x - 1, y, 8, 9); ctx.fillStyle = "#fff1a3"; ctx.fillRect(x + 1, y + 2, 4, 5); ctx.fillStyle = "#2b2a44"; ctx.fillRect(x - 3, y - 2, 12, 3); }
 function drawPlatforms() { for (const p of platforms) { if (p.kind === "street") { ctx.fillStyle = "#151827"; ctx.fillRect(p.x, p.y, p.w, p.h); ctx.fillStyle = "#2b3348"; ctx.fillRect(p.x, p.y, p.w, 5); ctx.fillStyle = "#5f6f8e"; for (let x = 0; x < W; x += 18) ctx.fillRect(x, p.y + 1, 10, 2); ctx.fillStyle = "#070911"; for (let x = 0; x < W; x += 16) ctx.fillRect(x, p.y + 10, 2, 24); } else { ctx.fillStyle = "#0b0d18"; ctx.fillRect(p.x, p.y + 4, p.w, p.h - 2); ctx.fillStyle = p.kind === "awning" ? "#d96b17" : "#31384f"; ctx.fillRect(p.x, p.y, p.w, 4); ctx.fillStyle = "#6d7899"; for (let x = p.x; x < p.x + p.w; x += 13) ctx.fillRect(x, p.y + 1, 6, 2); ctx.fillStyle = "#182036"; ctx.fillRect(p.x + 3, p.y + p.h, p.w - 6, 2); } } }
@@ -187,32 +266,63 @@ function drawSparks() { for (const s of state.sparks) { ctx.fillStyle = s.color;
 
 function drawCat(p) {
   if (p.inv > 0 && Math.floor(p.inv * 12) % 2) return;
-  const frame = Math.floor(p.animTime * (p.anim === "run" ? 12 : 5)) % 4;
-  const bob = p.anim === "run" ? frame % 2 : p.anim === "idle" ? (frame === 1 ? -1 : 0) : 0;
+  const rate = p.anim === "run" ? 13 : 5;
+  const frame = Math.floor(p.animTime * rate) % 4;
+  const step = p.anim === "run" ? (frame % 2 ? 1 : -1) : 0;
+  const bob = p.anim === "run" ? (frame % 2 ? -1 : 0) : p.anim === "idle" ? (frame === 1 ? -1 : 0) : 0;
   const lean = p.anim === "hurt" ? -p.facing * 2 : p.anim === "collect" ? p.facing : 0;
   const x = Math.round(p.x + lean); const y = Math.round(p.y + bob);
   const flip = p.facing < 0 ? -1 : 1;
   ctx.save(); ctx.translate(x + 8, y); ctx.scale(flip, 1); ctx.translate(-8, 0);
-  // Зонтик.
-  ctx.fillStyle = "#6b3215"; ctx.fillRect(15, 5, 2, 18);
-  ctx.fillStyle = "#ff8a10"; ctx.fillRect(-5, 3, 26, 4); ctx.fillRect(-2, 0, 20, 4); ctx.fillRect(2, -2, 12, 3); ctx.fillRect(6, -5, 5, 3);
-  ctx.fillStyle = "#ffc24b"; ctx.fillRect(-3, 4, 6, 2); ctx.fillRect(5, 1, 7, 2); ctx.fillRect(14, 4, 5, 2);
-  ctx.fillStyle = "#9a4b13"; for (let sx = -3; sx < 20; sx += 6) ctx.fillRect(sx, 6, 1, 2);
-  // Хвост и тело в дождевике.
-  ctx.fillStyle = "#fff3e6"; ctx.fillRect(-3, 14, 4, 8); ctx.fillRect(-7, 12, 5, 5); ctx.fillRect(-9, 9, 4, 4);
-  ctx.fillStyle = "#ff970f"; ctx.fillRect(4, 12, 11, 11); ctx.fillRect(3, 18, 13, 5); ctx.fillStyle = "#ffc24b"; ctx.fillRect(5, 13, 2, 8); ctx.fillRect(10, 13, 1, 9);
-  // Сапоги с run/jump кадрами.
-  ctx.fillStyle = "#ff7b10"; const leg = p.anim === "run" && frame % 2 ? 2 : 0; ctx.fillRect(1 + leg, 22, 6, 3); ctx.fillRect(11 - leg, 22, 6, 3);
-  // Голова белого кота.
-  ctx.fillStyle = "#fff3e6"; ctx.fillRect(3, 5, 13, 12); ctx.fillRect(2, 2, 4, 6); ctx.fillRect(12, 2, 4, 6);
-  ctx.fillStyle = "#ffb4a3"; ctx.fillRect(3, 3, 2, 3); ctx.fillRect(13, 3, 2, 3);
-  // Большие круглые оранжевые очки.
-  ctx.fillStyle = "#ff8b18"; ctx.fillRect(4, 8, 5, 5); ctx.fillRect(11, 8, 5, 5); ctx.fillRect(8, 10, 4, 1);
-  ctx.fillStyle = "#2b1b19"; ctx.fillRect(5, 9, 3, 3); ctx.fillRect(12, 9, 3, 3); ctx.fillStyle = "#fff"; ctx.fillRect(6, 9, 1, 1); ctx.fillRect(13, 9, 1, 1);
-  ctx.fillStyle = "#50312c"; ctx.fillRect(9, 13, 2, 1);
+
+  // Оранжевый зонт: крупная сегментная форма, тёмная ручка и светлые рёбра из референса.
+  ctx.fillStyle = "#5a2b14"; ctx.fillRect(16, 3, 2, 20); ctx.fillRect(15, 22, 4, 2);
+  ctx.fillStyle = "#c95d0b"; ctx.fillRect(-7, 2, 30, 5); ctx.fillRect(-4, -1, 25, 4); ctx.fillRect(0, -4, 17, 4); ctx.fillRect(6, -7, 7, 4);
+  ctx.fillStyle = "#ff8a0c"; ctx.fillRect(-6, 3, 28, 4); ctx.fillRect(-2, 0, 21, 4); ctx.fillRect(3, -3, 13, 4); ctx.fillRect(7, -6, 5, 3);
+  ctx.fillStyle = "#ffc247"; ctx.fillRect(-3, 4, 7, 2); ctx.fillRect(6, 1, 6, 2); ctx.fillRect(15, 4, 5, 2); ctx.fillRect(8, -5, 2, 2);
+  ctx.fillStyle = "#8a3f11"; for (let sx = -2; sx < 20; sx += 6) ctx.fillRect(sx, 6, 1, 2);
+
+  // Белый хвост с мягкой S-формой, чтобы силуэт оставался близок к коту на референсе.
+  ctx.fillStyle = "#d7d8d4"; ctx.fillRect(-7, 12, 4, 8); ctx.fillRect(-10, 10, 5, 5); ctx.fillRect(-11, 7, 4, 4);
+  ctx.fillStyle = "#fff7ec"; ctx.fillRect(-6, 11, 4, 8); ctx.fillRect(-9, 9, 5, 5); ctx.fillRect(-10, 6, 4, 4);
+
+  // Дождевик: капюшон и трапециевидная куртка, сохранены оранжевый цвет и chibi-пропорции.
+  ctx.fillStyle = "#b94e08"; ctx.fillRect(4, 11, 12, 13); ctx.fillRect(2, 17, 16, 7); ctx.fillRect(5, 23, 4, 2); ctx.fillRect(12, 23, 4, 2);
+  ctx.fillStyle = "#ff8f10"; ctx.fillRect(5, 10, 10, 13); ctx.fillRect(3, 17, 15, 6); ctx.fillRect(6, 23, 3, 2); ctx.fillRect(12, 23, 3, 2);
+  ctx.fillStyle = "#ffc24b"; ctx.fillRect(6, 12, 2, 9); ctx.fillRect(10, 12, 1, 10); ctx.fillRect(14, 14, 1, 6);
+  ctx.fillStyle = "#fff7ec"; ctx.fillRect(16, 14, 3, 6); // лапка держит ручку зонта
+
+  // Оранжевые сапоги — отдельные и заметные даже в run/jump кадрах.
+  const leg = p.anim === "run" ? step : 0;
+  ctx.fillStyle = "#9f4210"; ctx.fillRect(3 + leg, 24, 6, 2); ctx.fillRect(12 - leg, 24, 6, 2);
+  ctx.fillStyle = "#ff7c10"; ctx.fillRect(2 + leg, 22, 6, 4); ctx.fillRect(11 - leg, 22, 6, 4);
+
+  // Голова белого кота: широкая морда, острые ушки, маленький спокойный рот.
+  ctx.fillStyle = "#d8d9d4"; ctx.fillRect(2, 5, 15, 13); ctx.fillRect(1, 2, 5, 6); ctx.fillRect(12, 2, 5, 6);
+  ctx.fillStyle = "#fff7ec"; ctx.fillRect(3, 4, 13, 13); ctx.fillRect(2, 1, 4, 7); ctx.fillRect(12, 1, 4, 7); ctx.fillRect(5, 15, 9, 3);
+  ctx.fillStyle = "#ffb39d"; ctx.fillRect(3, 3, 2, 3); ctx.fillRect(13, 3, 2, 3);
+  ctx.fillStyle = "#e86f28"; ctx.fillRect(2, 9, 1, 2); ctx.fillRect(15, 9, 1, 2); // рыжие щёчки/метки
+
+  // Большие круглые оранжевые очки — главный идентификатор персонажа.
+  drawRoundGlasses(4, 8);
+  ctx.fillStyle = "#f08a24"; ctx.fillRect(8, 13, 1, 1); // нос
+  ctx.fillStyle = "#5b352c"; ctx.fillRect(9, 14, 2, 1); ctx.fillRect(7, 15, 1, 1); ctx.fillRect(12, 15, 1, 1);
+  ctx.fillStyle = "#d7825a"; ctx.fillRect(3, 13, 2, 1); ctx.fillRect(14, 13, 2, 1);
+
   if (p.anim === "hurt") { ctx.fillStyle = "#ffef8b"; ctx.fillRect(0, 3, 2, 2); ctx.fillRect(18, 7, 2, 2); }
   if (p.anim === "collect") { ctx.fillStyle = "#ffcf4a"; ctx.fillRect(0, 0, 2, 2); ctx.fillRect(18, 2, 2, 2); }
   ctx.restore();
+}
+
+function drawRoundGlasses(x, y) {
+  ctx.fillStyle = "#8a3f10";
+  ctx.fillRect(x, y + 1, 6, 4); ctx.fillRect(x + 1, y, 4, 6);
+  ctx.fillRect(x + 8, y + 1, 6, 4); ctx.fillRect(x + 9, y, 4, 6);
+  ctx.fillStyle = "#ff8b18";
+  ctx.fillRect(x + 1, y + 1, 4, 4); ctx.fillRect(x + 9, y + 1, 4, 4); ctx.fillRect(x + 6, y + 3, 3, 1);
+  ctx.fillStyle = "#201515";
+  ctx.fillRect(x + 2, y + 2, 2, 2); ctx.fillRect(x + 10, y + 2, 2, 2);
+  ctx.fillStyle = "#fff7ec"; ctx.fillRect(x + 2, y + 1, 1, 1); ctx.fillRect(x + 10, y + 1, 1, 1);
 }
 
 function drawPopups() { for (const p of state.popups) drawPixelText(p.text, p.x, p.y, p.color, 1); }
