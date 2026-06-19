@@ -9,6 +9,24 @@ const SCALE = 4;
 const GRAVITY = 0.34;
 const keys = new Set();
 
+const images = {
+  background: loadImage("assets/back.png"),
+  player: {
+    tail: loadImage("assets/player/tail.png"),
+    leftleg: loadImage("assets/player/leftleg.png"),
+    rightleg: loadImage("assets/player/rightleg.png"),
+    body: loadImage("assets/player/body.png"),
+    head: loadImage("assets/player/head.png"),
+    umbrella: loadImage("assets/player/umbrella.png")
+  }
+};
+
+function loadImage(src) {
+  const image = new Image();
+  image.src = src;
+  return image;
+}
+
 const platforms = [
   { x: 0, y: 222, w: 256, h: 34, kind: "street" },
   { x: 18, y: 184, w: 58, h: 9, kind: "awning" },
@@ -170,25 +188,25 @@ function draw() {
 }
 
 function drawBackground() {
-  // Грозовой фон: стилистически повторяет референс сцены, но оставляет платформы читаемыми.
-  const flash = state.lightning && state.lightning.warning <= 0 ? 0.18 : 0;
-  ctx.fillStyle = "#061026"; ctx.fillRect(0, 0, W, H);
-  ctx.fillStyle = "#0a1d43"; ctx.fillRect(0, 48, W, 118);
-  ctx.fillStyle = `rgba(37, 94, 168, ${0.18 + flash})`; ctx.fillRect(0, 74, W, 70);
-
-  drawStormClouds(flash);
-  drawSkyline(0, 156, "#092044", "#c77b1c", 0.35);
-  drawSkyline(11, 162, "#050b20", "#d99628", 0.72);
-
-  // Далёкие мокрые деревья / кусты с тёмно-зелёной полосой как в mood reference.
-  ctx.fillStyle = "#0b3328";
-  for (let x = -10; x < W; x += 17) {
-    const h = 7 + ((x * 5) & 9);
-    ctx.fillRect(x, 158 - h, 19, h);
-    ctx.fillStyle = "#0f4a35"; ctx.fillRect(x + 4, 154 - h, 9, 2); ctx.fillStyle = "#0b3328";
+  const bg = images.background;
+  if (bg.complete && bg.naturalWidth > 0) {
+    const scale = Math.max(W / bg.naturalWidth, H / bg.naturalHeight);
+    const sw = W / scale;
+    const sh = H / scale;
+    const sx = (bg.naturalWidth - sw) / 2;
+    const sy = (bg.naturalHeight - sh) / 2;
+    ctx.drawImage(bg, sx, sy, sw, sh, 0, 0, W, H);
+  } else {
+    ctx.fillStyle = "#061026";
+    ctx.fillRect(0, 0, W, H);
   }
 
-  drawLamp(22, 155); drawLamp(220, 155);
+  const flash = state.lightning && state.lightning.warning <= 0 ? 0.18 : 0;
+  if (flash) {
+    ctx.fillStyle = `rgba(130,205,255,${flash})`;
+    ctx.fillRect(0, 0, W, H);
+  }
+
   drawAmbientLightning();
   drawRain();
   drawWaterReflections();
@@ -266,52 +284,50 @@ function drawSparks() { for (const s of state.sparks) { ctx.fillStyle = s.color;
 
 function drawCat(p) {
   if (p.inv > 0 && Math.floor(p.inv * 12) % 2) return;
+
   const rate = p.anim === "run" ? 13 : 5;
   const frame = Math.floor(p.animTime * rate) % 4;
-  const step = p.anim === "run" ? (frame % 2 ? 1 : -1) : 0;
-  const bob = p.anim === "run" ? (frame % 2 ? -1 : 0) : p.anim === "idle" ? (frame === 1 ? -1 : 0) : 0;
-  const lean = p.anim === "hurt" ? -p.facing * 2 : p.anim === "collect" ? p.facing : 0;
-  const x = Math.round(p.x + lean); const y = Math.round(p.y + bob);
+  const stride = p.anim === "run" ? (frame % 2 ? 1 : -1) : 0;
+  const idleBob = p.anim === "idle" ? (frame === 1 ? -1 : 0) : 0;
+  const jumpLift = p.anim === "jump" ? -2 : p.anim === "fall" ? 1 : 0;
+  const hurtLean = p.anim === "hurt" ? -p.facing * 2 : 0;
+  const collectLift = p.anim === "collect" ? -2 : 0;
   const flip = p.facing < 0 ? -1 : 1;
-  ctx.save(); ctx.translate(x + 8, y); ctx.scale(flip, 1); ctx.translate(-8, 0);
 
-  // Оранжевый зонт: крупная сегментная форма, тёмная ручка и светлые рёбра из референса.
-  ctx.fillStyle = "#5a2b14"; ctx.fillRect(16, 3, 2, 20); ctx.fillRect(15, 22, 4, 2);
-  ctx.fillStyle = "#c95d0b"; ctx.fillRect(-7, 2, 30, 5); ctx.fillRect(-4, -1, 25, 4); ctx.fillRect(0, -4, 17, 4); ctx.fillRect(6, -7, 7, 4);
-  ctx.fillStyle = "#ff8a0c"; ctx.fillRect(-6, 3, 28, 4); ctx.fillRect(-2, 0, 21, 4); ctx.fillRect(3, -3, 13, 4); ctx.fillRect(7, -6, 5, 3);
-  ctx.fillStyle = "#ffc247"; ctx.fillRect(-3, 4, 7, 2); ctx.fillRect(6, 1, 6, 2); ctx.fillRect(15, 4, 5, 2); ctx.fillRect(8, -5, 2, 2);
-  ctx.fillStyle = "#8a3f11"; for (let sx = -2; sx < 20; sx += 6) ctx.fillRect(sx, 6, 1, 2);
+  const spriteSize = 32;
+  const originX = Math.round(p.x + p.w / 2);
+  const originY = Math.round(p.y + p.h - spriteSize + idleBob + jumpLift + collectLift);
 
-  // Белый хвост с мягкой S-формой, чтобы силуэт оставался близок к коту на референсе.
-  ctx.fillStyle = "#d7d8d4"; ctx.fillRect(-7, 12, 4, 8); ctx.fillRect(-10, 10, 5, 5); ctx.fillRect(-11, 7, 4, 4);
-  ctx.fillStyle = "#fff7ec"; ctx.fillRect(-6, 11, 4, 8); ctx.fillRect(-9, 9, 5, 5); ctx.fillRect(-10, 6, 4, 4);
+  ctx.save();
+  ctx.translate(originX + hurtLean, originY);
+  ctx.scale(flip, 1);
+  ctx.translate(-spriteSize / 2, 0);
 
-  // Дождевик: капюшон и трапециевидная куртка, сохранены оранжевый цвет и chibi-пропорции.
-  ctx.fillStyle = "#b94e08"; ctx.fillRect(4, 11, 12, 13); ctx.fillRect(2, 17, 16, 7); ctx.fillRect(5, 23, 4, 2); ctx.fillRect(12, 23, 4, 2);
-  ctx.fillStyle = "#ff8f10"; ctx.fillRect(5, 10, 10, 13); ctx.fillRect(3, 17, 15, 6); ctx.fillRect(6, 23, 3, 2); ctx.fillRect(12, 23, 3, 2);
-  ctx.fillStyle = "#ffc24b"; ctx.fillRect(6, 12, 2, 9); ctx.fillRect(10, 12, 1, 10); ctx.fillRect(14, 14, 1, 6);
-  ctx.fillStyle = "#fff7ec"; ctx.fillRect(16, 14, 3, 6); // лапка держит ручку зонта
+  drawPlayerPart("tail", -2 - stride * 0.5, p.anim === "run" ? -stride : 0);
+  drawPlayerPart("leftleg", -stride, p.anim === "run" ? Math.max(0, stride) : 0);
+  drawPlayerPart("rightleg", stride, p.anim === "run" ? Math.max(0, -stride) : 0);
+  drawPlayerPart("body", 0, p.anim === "collect" ? -1 : 0);
+  drawPlayerPart("head", p.anim === "hurt" ? -1 : 0, p.anim === "run" ? idleBob : 0);
+  drawPlayerPart("umbrella", p.anim === "run" ? stride * 0.5 : 0, p.anim === "jump" ? -1 : 0);
 
-  // Оранжевые сапоги — отдельные и заметные даже в run/jump кадрах.
-  const leg = p.anim === "run" ? step : 0;
-  ctx.fillStyle = "#9f4210"; ctx.fillRect(3 + leg, 24, 6, 2); ctx.fillRect(12 - leg, 24, 6, 2);
-  ctx.fillStyle = "#ff7c10"; ctx.fillRect(2 + leg, 22, 6, 4); ctx.fillRect(11 - leg, 22, 6, 4);
-
-  // Голова белого кота: широкая морда, острые ушки, маленький спокойный рот.
-  ctx.fillStyle = "#d8d9d4"; ctx.fillRect(2, 5, 15, 13); ctx.fillRect(1, 2, 5, 6); ctx.fillRect(12, 2, 5, 6);
-  ctx.fillStyle = "#fff7ec"; ctx.fillRect(3, 4, 13, 13); ctx.fillRect(2, 1, 4, 7); ctx.fillRect(12, 1, 4, 7); ctx.fillRect(5, 15, 9, 3);
-  ctx.fillStyle = "#ffb39d"; ctx.fillRect(3, 3, 2, 3); ctx.fillRect(13, 3, 2, 3);
-  ctx.fillStyle = "#e86f28"; ctx.fillRect(2, 9, 1, 2); ctx.fillRect(15, 9, 1, 2); // рыжие щёчки/метки
-
-  // Большие круглые оранжевые очки — главный идентификатор персонажа.
-  drawRoundGlasses(4, 8);
-  ctx.fillStyle = "#f08a24"; ctx.fillRect(8, 13, 1, 1); // нос
-  ctx.fillStyle = "#5b352c"; ctx.fillRect(9, 14, 2, 1); ctx.fillRect(7, 15, 1, 1); ctx.fillRect(12, 15, 1, 1);
-  ctx.fillStyle = "#d7825a"; ctx.fillRect(3, 13, 2, 1); ctx.fillRect(14, 13, 2, 1);
-
-  if (p.anim === "hurt") { ctx.fillStyle = "#ffef8b"; ctx.fillRect(0, 3, 2, 2); ctx.fillRect(18, 7, 2, 2); }
-  if (p.anim === "collect") { ctx.fillStyle = "#ffcf4a"; ctx.fillRect(0, 0, 2, 2); ctx.fillRect(18, 2, 2, 2); }
+  if (p.anim === "hurt") {
+    ctx.fillStyle = "#ffef8b";
+    ctx.fillRect(5, 5, 2, 2);
+    ctx.fillRect(27, 9, 2, 2);
+  }
+  if (p.anim === "collect") {
+    ctx.fillStyle = "#ffcf4a";
+    ctx.fillRect(4, 1, 2, 2);
+    ctx.fillRect(27, 3, 2, 2);
+  }
   ctx.restore();
+}
+
+function drawPlayerPart(name, dx, dy) {
+  const image = images.player[name];
+  if (image.complete && image.naturalWidth > 0) {
+    ctx.drawImage(image, Math.round(dx), Math.round(dy), 32, 32);
+  }
 }
 
 function drawRoundGlasses(x, y) {
