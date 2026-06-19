@@ -17,6 +17,7 @@ const H = 256;
 const SCALE = 4;
 const MAX_LIVES = 3;
 const GRAVITY = 0.34;
+const DEBUG_HITBOXES = false;
 const keys = new Set();
 const touchControls = { left: false, right: false, jump: false };
 const telegramWebApp = window.Telegram?.WebApp;
@@ -321,10 +322,40 @@ function spawnCrab(side) {
   const d = difficulty();
   const dir = side < 0 ? 1 : -1;
   const speed = (d.crabSpeed + Math.random() * 0.28) * dir;
-  state.crabs.push({ x: side < 0 ? -44 : W + 10, y: platforms[0].y - 24, w: 42, h: 24, vx: speed, vy: 0, dir, anim: 0, hit: false, jumper: Math.random() < d.jumpChance, jumpCd: 1.4 + Math.random() * 2.2, jumpPrep: 0, squash: 0, grounded: true, flash: 0 });
+  state.crabs.push({ x: side < 0 ? -44 : W + 10, y: platforms[0].y - 24, w: 42, h: 24, vx: speed, vy: 0, dir, anim: 0, active: true, dead: false, hit: false, jumper: Math.random() < d.jumpChance, jumpCd: 1.4 + Math.random() * 2.2, jumpPrep: 0, squash: 0, grounded: true, flash: 0 });
 }
 
-function crabHitbox(c) { return { x: c.x + 7, y: c.y + 7, w: c.w - 14, h: c.h - 9 }; }
+function getPlayerHitbox(player) {
+  return {
+    x: player.x + 4,
+    y: player.y + 4,
+    width: Math.max(1, player.w - 8),
+    height: Math.max(1, player.h - 6)
+  };
+}
+
+function getCrabHitbox(crab) {
+  return {
+    x: crab.x + 3,
+    y: crab.y + 4,
+    width: Math.max(1, crab.w - 6),
+    height: Math.max(1, crab.h - 6)
+  };
+}
+
+function intersects(a, b) {
+  return (
+    a.x < b.x + b.width &&
+    a.x + a.width > b.x &&
+    a.y < b.y + b.height &&
+    a.y + a.height > b.y
+  );
+}
+
+function crabHitbox(c) {
+  const box = getCrabHitbox(c);
+  return { x: box.x, y: box.y, w: box.width, h: box.height };
+}
 function nearestSurfaceY(x, y) {
   let best = platforms[0].y;
   for (const p of platforms) if (x >= p.x && x <= p.x + p.w && p.y >= y - 4 && p.y < best) best = p.y;
@@ -360,10 +391,10 @@ function update(dt) {
   state.riskText = Math.max(0, state.riskText - dt);
   state.cameraShake = Math.max(0, state.cameraShake - dt);
   state.screenFlash = Math.max(0, state.screenFlash - dt * 3.6);
-  if (state.player.inv > 0) state.player.inv -= dt;
+  state.player.inv = Math.max(0, state.player.inv - dt);
   if (state.player.collect > 0) state.player.collect -= dt;
   if (state.player.hurt > 0) state.player.hurt -= dt;
-  updatePlayer(dt); updateFishes(dt); updateLightning(dt); updateCrabs(dt); updateDrops(dt); updateJuice(dt);
+  updatePlayer(dt); updateFishes(dt); updateLightning(dt); updateCrabs(dt); checkCrabCollisions(); updateDrops(dt); updateJuice(dt);
   if (!state.fishes.some((f) => !f.risky) && Math.random() < 0.012) spawnFish(false);
   state.best = Math.max(state.best, Math.floor(state.score));
   bestScore.textContent = String(state.best);
@@ -444,9 +475,23 @@ function updateCrabs(dt) {
     if (c.jumpPrep > 0) { c.jumpPrep -= dt; if (c.jumpPrep <= 0) { c.vy = -4.4; c.grounded = false; c.jumpCd = 2.2 + Math.random() * 2.8; } }
     c.x += c.vx;
     if (!c.grounded) { c.vy += GRAVITY * 0.75; c.y += c.vy; if (c.y >= platforms[0].y - c.h) { c.y = platforms[0].y - c.h; c.vy = 0; c.grounded = true; c.squash = 0.18; } }
-    if (!c.hit && !state.player.inv && overlaps(state.player, crabHitbox(c))) { c.hit = true; hurtPlayer(1); state.player.vx += c.dir * 2.2; }
   }
-  state.crabs = state.crabs.filter((c) => c.x > -70 && c.x < W + 70 && !c.hit);
+  state.crabs = state.crabs.filter((c) => c.x > -70 && c.x < W + 70 && !c.dead);
+}
+
+function checkCrabCollisions() {
+  if (state.paused || state.gameOver || state.player.inv > 0) return;
+
+  const playerBox = getPlayerHitbox(state.player);
+  for (const crab of state.crabs) {
+    if (!crab.active || crab.dead) continue;
+
+    const crabBox = getCrabHitbox(crab);
+    if (intersects(playerBox, crabBox)) {
+      damagePlayerFromCrab(crab);
+      break;
+    }
+  }
 }
 
 function updateDrops(dt) {
@@ -461,17 +506,47 @@ function updateJuice(dt) {
   state.sparks = state.sparks.filter((s) => s.life > 0);
 }
 
+function damagePlayerFromCrab(crab) {
+  const p = state.player;
+  if (p.inv > 0 || state.gameOver) return;
+
+  state.lives -= 1;
+  p.inv = 1.5;
+  p.hurt = 0.45;
+
+  const knockbackDirection = p.x < crab.x + crab.w / 2 ? -1 : 1;
+  p.vx = knockbackDirection * 2.2;
+  p.vy = -4;
+  p.x = Math.max(3, Math.min(W - p.w - 3, p.x + knockbackDirection * 6));
+
+  haptic("notification", "error");
+  state.cameraShake = 0.35;
+  state.screenFlash = 0.22;
+  addSparks(p.x + 8, p.y + 14, "#ff7a45", 10);
+
+  if (state.lives <= 0) endGame();
+}
+
+function endGame() {
+  state.gameOver = true;
+  clearInput();
+  state.best = Math.max(state.best, Math.floor(state.score));
+  bestScore.textContent = String(state.best);
+  localStorage.setItem("kotogrozaBest", state.best);
+  syncUi();
+}
+
 function hurtPlayer(damage = 1) {
   const p = state.player; if (p.inv > 0) return;
   haptic("notification", "error");
   state.lives -= damage; p.inv = 1.5; p.hurt = 0.45; p.vy = -4; p.x = Math.max(8, p.x - p.facing * 10); state.cameraShake = 0.35; state.screenFlash = 0.22; addSparks(p.x + 8, p.y + 14, "#ff7a45", 10);
-  if (state.lives <= 0) { state.gameOver = true; clearInput(); state.best = Math.max(state.best, Math.floor(state.score)); bestScore.textContent = String(state.best); localStorage.setItem("kotogrozaBest", state.best); syncUi(); }
+  if (state.lives <= 0) endGame();
 }
 
 function draw() {
   ctx.save(); ctx.setTransform(SCALE, 0, 0, SCALE, 0, 0); ctx.clearRect(0, 0, W, H);
   if (state.cameraShake > 0 && !state.paused && !state.gameOver && state.countdown <= 0) ctx.translate((Math.random() - 0.5) * 2, (Math.random() - 0.5) * 2);
-  ctx.imageSmoothingEnabled = false; drawBackground(); drawPlatforms(); drawFishes(); drawDrops(); drawCrabWarnings(); drawCrabs(); drawLightning(); drawSparks(); drawCat(state.player); drawRainSplashes(); drawPopups(); drawHud(); drawFlash();
+  ctx.imageSmoothingEnabled = false; drawBackground(); drawPlatforms(); drawFishes(); drawDrops(); drawCrabWarnings(); drawCrabs(); drawLightning(); drawSparks(); drawCat(state.player); drawRainSplashes(); drawPopups(); drawDebugHitboxes(); drawHud(); drawFlash();
   if (!assetsReady && state.started) drawCenterText("ЗАГРУЗКА", "АССЕТЫ");
   if (!state.started) drawCenterText("КОТОГРОЗА", "НАЖМИТЕ ИГРАТЬ");
   if (state.countdown > 0 && !state.paused && !state.gameOver) drawCenterText(String(Math.ceil(state.countdown)), "ПРИГОТОВЬСЯ");
@@ -613,6 +688,23 @@ function drawCrab(c) {
   draw(images.crab.rightClaw, -19 + claw, -1 + bodyBob - claw / 2, 42, 27);
   if (c.flash > 0) { ctx.fillStyle = "rgba(210,245,255,.75)"; ctx.fillRect(-22, 0, 44, 28); }
   ctx.restore();
+}
+
+function drawDebugHitboxes() {
+  if (!DEBUG_HITBOXES) return;
+
+  const drawBox = (box, color) => {
+    ctx.fillStyle = color;
+    ctx.fillRect(box.x, box.y, box.width, box.height);
+    ctx.strokeStyle = color.replace("0.22", "0.8");
+    ctx.strokeRect(box.x, box.y, box.width, box.height);
+  };
+
+  drawBox(getPlayerHitbox(state.player), "rgba(85, 255, 120, 0.22)");
+  for (const crab of state.crabs) {
+    if (!crab.active || crab.dead) continue;
+    drawBox(getCrabHitbox(crab), "rgba(255, 80, 80, 0.22)");
+  }
 }
 
 function drawDrops() {
