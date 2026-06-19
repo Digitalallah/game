@@ -2,15 +2,29 @@
 <html lang="ru">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
   <title>Котогроза</title>
+  <script src="https://telegram.org/js/telegram-web-app.js?62"></script>
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-  <main class="game-shell">
-    <h1>Котогроза</h1>
-    <canvas id="game" width="1024" height="1024" aria-label="Игра Котогроза" role="img"></canvas>
-    <p class="hint">Стрелки/WASD — движение и прыжок · P — пауза · R — заново</p>
+  <main class="game-shell" aria-label="Котогроза">
+    <section id="start-screen" class="start-screen" aria-labelledby="start-title">
+      <h1 id="start-title">КОТОГРОЗА</h1>
+      <p class="start-best">Лучший результат: <span id="best-score">0</span></p>
+      <button id="play-button" class="play-button" type="button">ИГРАТЬ</button>
+      <p class="start-hint">Стрелки/WASD — движение и прыжок. На телефоне: ◀ ▶ и ⤴.</p>
+    </section>
+    <div class="canvas-wrap">
+      <canvas id="game" width="1024" height="1024" aria-label="Игра Котогроза" role="img"></canvas>
+    </div>
+    <div class="touch-controls" aria-label="Сенсорное управление">
+      <div class="touch-controls__directions">
+        <button class="touch-button" type="button" data-control="left" aria-label="Влево">◀</button>
+        <button class="touch-button" type="button" data-control="right" aria-label="Вправо">▶</button>
+      </div>
+      <button class="touch-button touch-button--jump" type="button" data-control="jump" aria-label="Прыжок">⤴</button>
+    </div>
   </main>
   <script src="src/main.js"></script>
 </body>
