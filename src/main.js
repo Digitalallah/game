@@ -21,12 +21,47 @@ const DEBUG_HITBOXES = false;
 const keys = new Set();
 const touchControls = { left: false, right: false, jump: false };
 const telegramWebApp = window.Telegram?.WebApp;
+let viewportHandlersRegistered = false;
+let viewportUpdateFrame = 0;
+
+function readAppHeight() {
+  const telegramHeight = Number(telegramWebApp?.viewportHeight);
+  if (Number.isFinite(telegramHeight) && telegramHeight > 0) return telegramHeight;
+  const visualHeight = Number(window.visualViewport?.height);
+  if (Number.isFinite(visualHeight) && visualHeight > 0) return visualHeight;
+  return window.innerHeight;
+}
+
+function updateAppHeight() {
+  if (viewportUpdateFrame) cancelAnimationFrame(viewportUpdateFrame);
+  viewportUpdateFrame = requestAnimationFrame(() => {
+    viewportUpdateFrame = 0;
+    const height = readAppHeight();
+    if (Number.isFinite(height) && height > 0) {
+      document.documentElement.style.setProperty("--app-height", `${height}px`);
+    }
+  });
+}
+
+function registerViewportHandlers() {
+  if (viewportHandlersRegistered) return;
+  viewportHandlersRegistered = true;
+
+  telegramWebApp?.onEvent?.("viewportChanged", updateAppHeight);
+  window.visualViewport?.addEventListener("resize", updateAppHeight, { passive: true });
+  window.addEventListener("resize", updateAppHeight, { passive: true });
+  window.addEventListener("orientationchange", updateAppHeight, { passive: true });
+}
 
 function initTelegram() {
+  updateAppHeight();
+  registerViewportHandlers();
   if (!telegramWebApp) return;
   try {
     telegramWebApp.ready();
+    updateAppHeight();
     telegramWebApp.expand();
+    updateAppHeight();
   } catch (error) {
     console.warn("Telegram WebApp init failed", error);
   }
