@@ -243,10 +243,27 @@ function spawnCrab(side) {
   const d = difficulty();
   const dir = side < 0 ? 1 : -1;
   const speed = (d.crabSpeed + Math.random() * 0.28) * dir;
-  state.crabs.push({ x: side < 0 ? -44 : W + 10, y: platforms[0].y - 24, w: 42, h: 24, vx: speed, vy: 0, dir, anim: 0, hit: false, jumper: Math.random() < d.jumpChance, jumpCd: 1.4 + Math.random() * 2.2, jumpPrep: 0, squash: 0, grounded: true, flash: 0 });
+  state.crabs.push({
+    x: side < 0 ? -44 : W + 10,
+    y: platforms[0].y - 24,
+    w: 42,
+    h: 24,
+    vx: speed,
+    vy: 0,
+    dir,
+    anim: 0,
+    hit: false,
+    touchingPlayer: false,
+    jumper: Math.random() < d.jumpChance,
+    jumpCd: 1.4 + Math.random() * 2.2,
+    jumpPrep: 0,
+    squash: 0,
+    grounded: true,
+    flash: 0
+  });
 }
 
-function crabHitbox(c) { return { x: c.x + 7, y: c.y + 7, w: c.w - 14, h: c.h - 9 }; }
+function crabHitbox(c) { return { x: c.x + 10, y: c.y + 9, w: c.w - 20, h: c.h - 12 }; }
 function nearestSurfaceY(x, y) {
   let best = platforms[0].y;
   for (const p of platforms) if (x >= p.x && x <= p.x + p.w && p.y >= y - 4 && p.y < best) best = p.y;
@@ -360,12 +377,20 @@ function updateCrabs(dt) {
   for (const w of state.crabWarnings) { w.life -= dt; if (w.life <= 0) spawnCrab(w.side); }
   state.crabWarnings = state.crabWarnings.filter((w) => w.life > 0);
   for (const c of state.crabs) {
-    c.anim += dt * (6 + Math.abs(c.vx) * 5); c.squash = Math.max(0, c.squash - dt);
+    c.anim += dt * (6 + Math.abs(c.vx) * 5); c.squash = Math.max(0, c.squash - dt); c.flash = Math.max(0, c.flash - dt);
     if (c.jumper && c.grounded) { c.jumpCd -= dt; if (c.jumpCd <= 0 && c.jumpPrep <= 0) c.jumpPrep = 0.52; }
     if (c.jumpPrep > 0) { c.jumpPrep -= dt; if (c.jumpPrep <= 0) { c.vy = -4.4; c.grounded = false; c.jumpCd = 2.2 + Math.random() * 2.8; } }
     c.x += c.vx;
     if (!c.grounded) { c.vy += GRAVITY * 0.75; c.y += c.vy; if (c.y >= platforms[0].y - c.h) { c.y = platforms[0].y - c.h; c.vy = 0; c.grounded = true; c.squash = 0.18; } }
-    if (!c.hit && !state.player.inv && overlaps(state.player, crabHitbox(c))) { c.hit = true; hurtPlayer(); state.player.vx += c.dir * 2.2; }
+    const touchesPlayer = overlaps(state.player, crabHitbox(c));
+    if (!c.hit && touchesPlayer && !c.touchingPlayer && state.player.inv <= 0) {
+      c.touchingPlayer = true;
+      c.flash = 0.16;
+      hurtPlayer(-c.dir);
+      addPopup("БАМ!", state.player.x - 4, state.player.y - 8, "#ff7a45");
+    } else if (!touchesPlayer) {
+      c.touchingPlayer = false;
+    }
   }
   state.crabs = state.crabs.filter((c) => c.x > -70 && c.x < W + 70 && !c.hit);
 }
@@ -382,10 +407,19 @@ function updateJuice(dt) {
   state.sparks = state.sparks.filter((s) => s.life > 0);
 }
 
-function hurtPlayer() {
+function hurtPlayer(knockbackDir = -state.player.facing) {
   const p = state.player; if (p.inv > 0) return;
   haptic("notification", "error");
-  state.lives -= 1; p.inv = 1.5; p.hurt = 0.45; p.vy = -4; p.x = Math.max(8, p.x - p.facing * 10); state.cameraShake = 0.35; state.screenFlash = 0.22; addSparks(p.x + 8, p.y + 14, "#ff7a45", 10);
+  const dir = Math.sign(knockbackDir) || -p.facing || 1;
+  state.lives -= 1;
+  p.inv = 1.5;
+  p.hurt = 0.45;
+  p.vx = dir * 2.6;
+  p.vy = -4;
+  p.x = Math.max(8, Math.min(W - p.w - 3, p.x + dir * 8));
+  state.cameraShake = 0.35;
+  state.screenFlash = 0.22;
+  addSparks(p.x + 8, p.y + 14, "#ff7a45", 14);
   if (state.lives <= 0) { state.gameOver = true; state.best = Math.max(state.best, Math.floor(state.score)); bestScore.textContent = String(state.best); localStorage.setItem("kotogrozaBest", state.best); }
 }
 
@@ -516,23 +550,30 @@ function drawCrabWarnings() {
 function drawCrabs() { for (const c of state.crabs) drawCrab(c); }
 
 function drawCrab(c) {
-  const walk = Math.round(Math.sin(c.anim) * 2);
+  ctx.save();
+  if (c.dir < 0) {
+    ctx.translate(Math.round(c.x + c.w), Math.round(c.y));
+    ctx.scale(-1, 1);
+    drawCrabParts(ctx, 0, 0, c);
+  } else {
+    ctx.translate(Math.round(c.x), Math.round(c.y));
+    drawCrabParts(ctx, 0, 0, c);
+  }
+  ctx.restore();
+}
+
+function drawCrabParts(ctx, x, y, c) {
+  const walking = c.grounded && c.jumpPrep <= 0;
+  const legShift = walking ? Math.sin(c.anim) * 1.4 : 0;
   const bodyBob = c.jumpPrep > 0 ? 3 : c.squash > 0 ? 2 : Math.round(Math.sin(c.anim * 0.8));
   const claw = c.jumpPrep > 0 ? -3 : Math.round(Math.cos(c.anim) * 2);
-  const sx = c.dir < 0 ? -1 : 1;
-  ctx.save();
-  ctx.translate(Math.round(c.x + c.w / 2), Math.round(c.y));
-  ctx.scale(sx, 1);
-  const draw = (img, x, y, w = 42, h = 27) => { if (img.complete && img.naturalWidth > 0) ctx.drawImage(img, Math.round(x), Math.round(y), w, h); };
-  draw(images.crab.leftLeg, -21, 3 + walk, 42, 27);
-  draw(images.crab.rightLeg, -21, 3 - walk, 42, 27);
-  draw(images.crab.body, -21, bodyBob, 42, 27);
-  draw(images.crab.leftLeg, -21, 5 - walk, 42, 27);
-  draw(images.crab.rightLeg, -21, 5 + walk, 42, 27);
-  draw(images.crab.leftClaw, -23 - claw, -1 + bodyBob + claw / 2, 42, 27);
-  draw(images.crab.rightClaw, -19 + claw, -1 + bodyBob - claw / 2, 42, 27);
-  if (c.flash > 0) { ctx.fillStyle = "rgba(210,245,255,.75)"; ctx.fillRect(-22, 0, 44, 28); }
-  ctx.restore();
+  const draw = (img, dx, dy, w = 42, h = 27) => { if (img.complete && img.naturalWidth > 0) ctx.drawImage(img, Math.round(x + dx), Math.round(y + dy), w, h); };
+  draw(images.crab.leftLeg, 0, 3 + legShift, 42, 27);
+  draw(images.crab.rightLeg, 0, 3 - legShift, 42, 27);
+  draw(images.crab.body, 0, bodyBob, 42, 27);
+  draw(images.crab.leftClaw, -2 - claw, -1 + bodyBob + claw / 2, 42, 27);
+  draw(images.crab.rightClaw, 2 + claw, -1 + bodyBob - claw / 2, 42, 27);
+  if (c.flash > 0) { ctx.fillStyle = "rgba(255,122,69,.55)"; ctx.fillRect(-1, 0, 44, 28); }
 }
 
 function drawDrops() {
