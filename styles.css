@@ -44,6 +44,7 @@ button {
 }
 
 .canvas-wrap {
+  position: relative;
   display: grid;
   place-items: center;
   width: 100%;
@@ -162,4 +163,73 @@ h1 {
   .game-shell {
     max-width: min(100vh, 820px);
   }
+}
+
+
+.pause-button {
+  position: absolute;
+  z-index: 4;
+  top: max(48px, 7%);
+  right: max(12px, 5%);
+  width: clamp(48px, 13vw, 64px);
+  height: clamp(48px, 13vw, 64px);
+  border: 3px solid rgba(255, 241, 163, 0.8);
+  border-radius: 12px;
+  background: rgba(9, 8, 24, 0.62);
+  color: #fff1a3;
+  font-weight: 700;
+  font-size: clamp(1.25rem, 5vw, 1.9rem);
+  letter-spacing: 0.05em;
+  box-shadow: 0 8px 22px #0009;
+  cursor: pointer;
+  touch-action: none;
+}
+
+.pause-button[hidden],
+.game-overlay[hidden] {
+  display: none;
+}
+
+.pause-button:active {
+  background: rgba(249, 179, 61, 0.42);
+}
+
+.game-overlay {
+  position: absolute;
+  z-index: 6;
+  inset: 0;
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  gap: 14px;
+  padding: 24px;
+  text-align: center;
+  background: rgba(3, 4, 12, 0.76);
+  text-shadow: 3px 3px 0 #23142f, 0 0 18px #315aa0;
+}
+
+.game-overlay__title {
+  margin: 0;
+  color: #f9b33d;
+  font-size: clamp(2rem, 10vw, 4.5rem);
+  letter-spacing: 0.08em;
+}
+
+.game-overlay__score {
+  margin: 0;
+  color: #fff8d8;
+  font-weight: 700;
+  font-size: clamp(1rem, 4.5vw, 1.6rem);
+}
+
+.game-overlay__button {
+  min-width: min(82vw, 20rem);
+  min-height: 64px;
+  padding: 16px 24px;
+  border: 4px solid #6d5d82;
+  background: #f9b33d;
+  color: #090818;
+  box-shadow: 5px 5px 0 #23142f, 0 0 24px #f9b33d66;
+  cursor: pointer;
+  touch-action: none;
 }

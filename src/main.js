@@ -3,6 +3,12 @@ const canvas = document.getElementById("game");
 const startScreen = document.getElementById("start-screen");
 const playButton = document.getElementById("play-button");
 const bestScore = document.getElementById("best-score");
+const pauseButton = document.getElementById("pause-button");
+const gameOverlay = document.getElementById("game-overlay");
+const overlayTitle = document.getElementById("overlay-title");
+const overlayScore = document.getElementById("overlay-score");
+const overlayBest = document.getElementById("overlay-best");
+const overlayButton = document.getElementById("overlay-button");
 const ctx = canvas.getContext("2d");
 ctx.imageSmoothingEnabled = false;
 
@@ -113,7 +119,8 @@ const state = {
   cameraShake: 0,
   screenFlash: 0,
   started: false,
-  hiddenPaused: false
+  hiddenPaused: false,
+  countdown: 0
 };
 
 function reset() {
@@ -137,20 +144,70 @@ function reset() {
   state.cameraShake = 0;
   state.screenFlash = 0;
   state.hiddenPaused = false;
+  state.countdown = 0;
+  state.rain = state.rain.length ? state.rain : [];
+  clearInput();
   spawnFish(false);
+  syncUi();
 }
 
 for (let i = 0; i < 115; i++) {
   state.rain.push({ x: Math.random() * W, y: Math.random() * H, s: 1 + Math.random() * 2.2, layer: Math.random() });
 }
 
-addEventListener("keydown", (e) => {
-  if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", " "].includes(e.key)) e.preventDefault();
-  keys.add(e.key.toLowerCase());
-  if (e.key.toLowerCase() === "p" && state.started && !state.gameOver) state.paused = !state.paused;
-  if (e.key.toLowerCase() === "r") { reset(); startGame(); }
+const controlCodes = new Set(["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Space"]);
+const keyActions = {
+  KeyA: "left",
+  ArrowLeft: "left",
+  KeyD: "right",
+  ArrowRight: "right",
+  KeyW: "jump",
+  ArrowUp: "jump",
+  Space: "jump"
+};
+
+addEventListener("keydown", (event) => {
+  if (controlCodes.has(event.code)) event.preventDefault();
+  if (event.code in keyActions) keys.add(event.code);
+  if (!state.started) return;
+  if ((event.code === "KeyP" || event.code === "Escape") && !event.repeat && !state.gameOver) togglePause();
+  if (event.code === "KeyR" && !event.repeat && state.gameOver) restartGame();
 });
-addEventListener("keyup", (e) => keys.delete(e.key.toLowerCase()));
+addEventListener("keyup", (event) => {
+  if (controlCodes.has(event.code)) event.preventDefault();
+  if (event.code in keyActions) keys.delete(event.code);
+});
+
+function syncUi() {
+  pauseButton.hidden = !state.started || state.gameOver;
+  const showOverlay = state.started && (state.paused || state.gameOver);
+  gameOverlay.hidden = !showOverlay;
+  if (!showOverlay) return;
+  overlayTitle.textContent = state.gameOver ? "ИГРА ОКОНЧЕНА" : "ПАУЗА";
+  overlayScore.hidden = !state.gameOver;
+  overlayBest.hidden = !state.gameOver;
+  if (state.gameOver) {
+    overlayScore.textContent = `СЧЁТ: ${Math.floor(state.score)}`;
+    overlayBest.textContent = `РЕКОРД: ${state.best}`;
+  }
+  overlayButton.textContent = state.gameOver ? "НАЧАТЬ ЗАНОВО" : "ПРОДОЛЖИТЬ";
+}
+
+function togglePause(force = null) {
+  if (!state.started || state.gameOver) return;
+  state.paused = force === null ? !state.paused : force;
+  clearInput();
+  syncUi();
+}
+
+function restartGame() {
+  reset();
+  state.started = true;
+  state.countdown = 3;
+  startScreen.hidden = true;
+  syncUi();
+  canvas.focus?.();
+}
 
 function clearInput() {
   keys.clear();
@@ -179,21 +236,31 @@ document.querySelectorAll("[data-control]").forEach((button) => {
   }
 });
 
-addEventListener("blur", clearInput);
-document.addEventListener("visibilitychange", () => {
-  if (document.hidden) {
-    if (state.started && !state.gameOver) { state.paused = true; state.hiddenPaused = true; }
+function autoPause() {
+  if (state.started && !state.gameOver && !state.paused) {
+    state.hiddenPaused = true;
+    togglePause(true);
+  } else {
     clearInput();
-  } else if (state.hiddenPaused) {
+  }
+}
+
+addEventListener("blur", autoPause);
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) autoPause();
+  else if (state.hiddenPaused) {
     state.paused = true;
     state.hiddenPaused = false;
+    syncUi();
   }
 });
 
 function startGame() {
   state.started = true;
   state.paused = false;
+  state.countdown = 0;
   startScreen.hidden = true;
+  syncUi();
   canvas.focus?.();
 }
 
@@ -201,6 +268,17 @@ playButton.addEventListener("click", () => {
   if (!assetsReady) return;
   reset();
   startGame();
+});
+
+pauseButton.addEventListener("pointerdown", (event) => {
+  event.preventDefault();
+  togglePause();
+});
+
+overlayButton.addEventListener("pointerdown", (event) => {
+  event.preventDefault();
+  if (state.gameOver) restartGame();
+  else togglePause(false);
 });
 
 function overlaps(a, b) {
@@ -277,6 +355,7 @@ function startLightning() {
 
 function update(dt) {
   if (!state.started || state.paused || state.gameOver) return;
+  if (state.countdown > 0) { state.countdown = Math.max(0, state.countdown - dt); return; }
   state.time += dt; state.score += dt * 3;
   state.riskText = Math.max(0, state.riskText - dt);
   state.cameraShake = Math.max(0, state.cameraShake - dt);
@@ -293,9 +372,9 @@ function update(dt) {
 
 function updatePlayer(dt) {
   const p = state.player;
-  const left = keys.has("arrowleft") || keys.has("a") || touchControls.left;
-  const right = keys.has("arrowright") || keys.has("d") || touchControls.right;
-  const jump = keys.has(" ") || keys.has("arrowup") || keys.has("w") || touchControls.jump;
+  const left = keys.has("ArrowLeft") || keys.has("KeyA") || touchControls.left;
+  const right = keys.has("ArrowRight") || keys.has("KeyD") || touchControls.right;
+  const jump = keys.has("Space") || keys.has("ArrowUp") || keys.has("KeyW") || touchControls.jump;
   p.vx = (right - left) * 1.55;
   if (p.vx) p.facing = Math.sign(p.vx);
   if (jump && p.grounded) { p.vy = -6.2; p.grounded = false; }
@@ -386,17 +465,16 @@ function hurtPlayer() {
   const p = state.player; if (p.inv > 0) return;
   haptic("notification", "error");
   state.lives -= 1; p.inv = 1.5; p.hurt = 0.45; p.vy = -4; p.x = Math.max(8, p.x - p.facing * 10); state.cameraShake = 0.35; state.screenFlash = 0.22; addSparks(p.x + 8, p.y + 14, "#ff7a45", 10);
-  if (state.lives <= 0) { state.gameOver = true; state.best = Math.max(state.best, Math.floor(state.score)); bestScore.textContent = String(state.best); localStorage.setItem("kotogrozaBest", state.best); }
+  if (state.lives <= 0) { state.gameOver = true; clearInput(); state.best = Math.max(state.best, Math.floor(state.score)); bestScore.textContent = String(state.best); localStorage.setItem("kotogrozaBest", state.best); syncUi(); }
 }
 
 function draw() {
   ctx.save(); ctx.setTransform(SCALE, 0, 0, SCALE, 0, 0); ctx.clearRect(0, 0, W, H);
-  if (state.cameraShake > 0) ctx.translate((Math.random() - 0.5) * 2, (Math.random() - 0.5) * 2);
+  if (state.cameraShake > 0 && !state.paused && !state.gameOver && state.countdown <= 0) ctx.translate((Math.random() - 0.5) * 2, (Math.random() - 0.5) * 2);
   ctx.imageSmoothingEnabled = false; drawBackground(); drawPlatforms(); drawFishes(); drawDrops(); drawCrabWarnings(); drawCrabs(); drawLightning(); drawSparks(); drawCat(state.player); drawRainSplashes(); drawPopups(); drawHud(); drawFlash();
   if (!assetsReady && state.started) drawCenterText("ЗАГРУЗКА", "АССЕТЫ");
   if (!state.started) drawCenterText("КОТОГРОЗА", "НАЖМИТЕ ИГРАТЬ");
-  if (state.paused) drawCenterText("ПАУЗА", "P — ПРОДОЛЖИТЬ");
-  if (state.gameOver) drawCenterText("ИГРА ОКОНЧЕНА", "R — ЗАНОВО");
+  if (state.countdown > 0 && !state.paused && !state.gameOver) drawCenterText(String(Math.ceil(state.countdown)), "ПРИГОТОВЬСЯ");
   if (state.riskText > 0) drawPixelText("РИСК!", 106, 104, "#ffcf4a", 2);
   ctx.restore(); requestAnimationFrame(draw);
 }
@@ -467,10 +545,13 @@ function drawAmbientLightning() {
 }
 
 function drawRain() {
+  const animateRain = state.started && !state.paused && !state.gameOver && state.countdown <= 0;
   ctx.fillStyle = "#1f8ce8";
   for (const r of state.rain) {
-    r.y += r.s; r.x -= 0.55 + r.layer * 0.45;
-    if (r.y > H) { r.y = -8; r.x = Math.random() * W; }
+    if (animateRain) {
+      r.y += r.s; r.x -= 0.55 + r.layer * 0.45;
+      if (r.y > H) { r.y = -8; r.x = Math.random() * W; }
+    }
     ctx.globalAlpha = 0.42 + r.layer * 0.38;
     ctx.fillRect(r.x, r.y, 1, 5 + r.layer * 6);
     if (r.layer > 0.72) ctx.fillRect(r.x - 1, r.y + 4, 1, 3);
@@ -487,6 +568,7 @@ function drawWaterReflections() {
 }
 
 function drawRainSplashes() {
+  if (state.paused || state.gameOver || state.countdown > 0) return;
   ctx.fillStyle = "rgba(126, 232, 255, .55)";
   for (let x = 2; x < W; x += 19) if ((x + Math.floor(state.time * 24)) % 3 === 0) ctx.fillRect(x, 221, 4, 1);
 }
@@ -543,7 +625,7 @@ function drawLightning() {
     const blink = Math.floor(l.flicker * 14) % 2 === 0;
     if (l.warning > 0) { ctx.fillStyle = `rgba(255, 202, 47, ${blink ? 0.48 : 0.18})`; ctx.fillRect(l.x - l.w / 2, l.y - 2, l.w, 6); ctx.fillStyle = "rgba(255,239,139,.35)"; ctx.fillRect(l.x - 2, 34, 4, l.y - 34); ctx.fillStyle = "#ffef8b"; if (blink) ctx.fillRect(l.x - 1, 34, 2, l.y - 34); continue; }
     ctx.fillStyle = "rgba(77,154,255,.22)"; ctx.fillRect(l.x - 11, 0, 22, l.y + 18); ctx.fillStyle = "#f7fbff"; let x = l.x;
-    for (let y = 0; y < l.y + 14; y += 9) { const nx = l.x + Math.sin((y + l.seed) * 0.45) * 8 + (Math.random() - 0.5) * 5; ctx.fillRect(Math.min(x, nx), y, Math.abs(nx - x) + 3, 5); ctx.fillStyle = "#7cc4ff"; ctx.fillRect(Math.min(x, nx) - 2, y + 2, Math.abs(nx - x) + 7, 2); ctx.fillStyle = "#f7fbff"; x = nx; }
+    for (let y = 0; y < l.y + 14; y += 9) { const nx = l.x + Math.sin((y + l.seed) * 0.45) * 8 + Math.sin((y + l.seed) * 1.7) * 2.5; ctx.fillRect(Math.min(x, nx), y, Math.abs(nx - x) + 3, 5); ctx.fillStyle = "#7cc4ff"; ctx.fillRect(Math.min(x, nx) - 2, y + 2, Math.abs(nx - x) + 7, 2); ctx.fillStyle = "#f7fbff"; x = nx; }
     ctx.fillStyle = "#eaf8ff"; ctx.fillRect(l.x - 10, l.y + 8, 20, 4); ctx.fillStyle = "rgba(130,205,255,.6)"; ctx.fillRect(l.x - 14, Math.min(228, l.y + 18), 28, 2); ctx.fillRect(l.x - 8, Math.min(236, l.y + 25), 16, 1);
   }
 }
@@ -633,4 +715,5 @@ let last = performance.now();
 function frame(now) { const dt = Math.min(0.033, (now - last) / 1000); last = now; update(dt); requestAnimationFrame(frame); }
 reset();
 bestScore.textContent = String(state.best);
+syncUi();
 requestAnimationFrame(frame); draw();

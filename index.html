@@ -13,10 +13,17 @@
       <h1 id="start-title">КОТОГРОЗА</h1>
       <p class="start-best">Лучший результат: <span id="best-score">0</span></p>
       <button id="play-button" class="play-button" type="button">ИГРАТЬ</button>
-      <p class="start-hint">Стрелки/WASD — движение и прыжок. На телефоне: ◀ ▶ и ⤴.</p>
+      <p class="start-hint">Стрелки/WASD — движение и прыжок. P/Esc — пауза. На телефоне: ◀ ▶, ⤴ и II.</p>
     </section>
     <div class="canvas-wrap">
       <canvas id="game" width="1024" height="1024" aria-label="Игра Котогроза" role="img"></canvas>
+      <button id="pause-button" class="pause-button" type="button" aria-label="Пауза" hidden>II</button>
+      <div id="game-overlay" class="game-overlay" hidden>
+        <h2 id="overlay-title" class="game-overlay__title">ПАУЗА</h2>
+        <p id="overlay-score" class="game-overlay__score" hidden></p>
+        <p id="overlay-best" class="game-overlay__score" hidden></p>
+        <button id="overlay-button" class="game-overlay__button" type="button">ПРОДОЛЖИТЬ</button>
+      </div>
     </div>
     <div class="touch-controls" aria-label="Сенсорное управление">
       <div class="touch-controls__directions">
