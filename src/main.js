@@ -212,13 +212,22 @@ const state = {
   cameraShake: 0,
   screenFlash: 0,
   started: false,
+  characterId: selectedCharacter,
   hiddenPaused: false,
   countdown: 0,
   camp: { x: 0, y: 0, platform: -1, still: 0, pressure: 0 }
 };
 
-function reset() {
-  state.player = { x: 28, y: 184, w: 16, h: 24, vx: 0, vy: 0, facing: 1, grounded: false, inv: 0, anim: "idle", animTime: 0, collect: 0, hurt: 0 };
+function createPlayer(characterId) {
+  if (!characters[characterId]) {
+    throw new Error(`Cannot create player: ${characterId}`);
+  }
+
+  return { x: 28, y: 184, w: 16, h: 24, vx: 0, vy: 0, facing: 1, grounded: false, inv: 0, anim: "idle", animTime: 0, collect: 0, hurt: 0 };
+}
+
+function resetRoundState() {
+  state.player = null;
   state.score = 0;
   state.lives = 3;
   state.time = 0;
@@ -243,6 +252,12 @@ function reset() {
   clearInput();
   spawnFish(false);
   syncUi();
+}
+
+function reset(characterId = state.characterId) {
+  resetRoundState();
+  state.characterId = characterId;
+  state.player = createPlayer(characterId);
 }
 
 for (let i = 0; i < 115; i++) {
@@ -299,8 +314,17 @@ function togglePause(force = null) {
 }
 
 function restartGame() {
-  reset();
-  state.started = true;
+  try {
+    reset(state.characterId);
+    state.started = true;
+  } catch (error) {
+    console.error("Game start/render error:", error);
+    state.started = false;
+    state.player = null;
+    startScreen.hidden = false;
+    syncUi();
+    return;
+  }
   state.countdown = 3;
   startScreen.hidden = true;
   syncUi();
@@ -353,10 +377,17 @@ document.addEventListener("visibilitychange", () => {
   }
 });
 
+function getCharacterImages(character) {
+  return [...Object.values(character.parts || {}), character.head].filter(Boolean);
+}
+
+function waitForCharacterAssets(character) {
+  return Promise.all(getCharacterImages(character).map(imageReady));
+}
+
 function startGame() {
   ensureAudio();
   startMusic();
-  state.started = true;
   state.paused = false;
   state.countdown = 0;
   startScreen.hidden = true;
@@ -364,12 +395,42 @@ function startGame() {
   canvas.focus?.();
 }
 
-playButton.addEventListener("click", () => {
+let gameStarting = false;
+async function beginGame() {
+  if (gameStarting || state.started) return;
+
+  gameStarting = true;
+  playButton.disabled = true;
   playSound("ui");
-  if (!assetsReady) return;
-  reset();
-  startGame();
-});
+
+  try {
+    const characterId = selectedCharacter;
+    const character = characters[characterId];
+    if (!character) {
+      throw new Error(`Unknown character: ${characterId}`);
+    }
+
+    await waitForCharacterAssets(character);
+
+    resetRoundState();
+    state.characterId = characterId;
+    state.player = createPlayer(characterId);
+    state.started = true;
+    startGame();
+  } catch (error) {
+    console.error("Unable to start game:", error);
+    console.error("Game start/render error:", error);
+    state.started = false;
+    state.player = null;
+    startScreen.hidden = false;
+    syncUi();
+  } finally {
+    gameStarting = false;
+    playButton.disabled = !assetsReady;
+  }
+}
+
+playButton.addEventListener("click", beginGame);
 
 pauseButton.addEventListener("pointerdown", (event) => { event.preventDefault(); togglePause(); });
 mobilePauseButton.addEventListener("pointerdown", (event) => { event.preventDefault(); togglePause(); });
@@ -489,7 +550,8 @@ function startLightning() {
 }
 
 function update(dt) {
-  if (!state.started || state.paused || state.gameOver) return;
+  if (!state.started || !state.player) return;
+  if (state.paused || state.gameOver) return;
   if (state.countdown > 0) { state.countdown = Math.max(0, state.countdown - dt); return; }
   state.time += dt; state.score += dt * 3; updateAntiCamp(dt);
   state.cameraShake = Math.max(0, state.cameraShake - dt);
@@ -662,11 +724,11 @@ function hurtPlayer(damage = 1) {
 function draw() {
   ctx.save(); ctx.setTransform(SCALE, 0, 0, SCALE, 0, 0); ctx.clearRect(0, 0, W, H);
   if (state.cameraShake > 0 && !state.paused && !state.gameOver && state.countdown <= 0) ctx.translate((Math.random() - 0.5) * 2, (Math.random() - 0.5) * 2);
-  ctx.imageSmoothingEnabled = false; drawBackground(); drawPlatforms(); drawFishes(); drawDrops(); drawCrabWarnings(); drawCrabs(); drawLightning(); drawSparks(); drawCharacter(state.player); drawRainSplashes(); drawPopups(); drawDebugHitboxes(); drawHud(); drawFlash();
+  ctx.imageSmoothingEnabled = false; drawBackground(); drawPlatforms(); drawFishes(); drawDrops(); drawCrabWarnings(); drawCrabs(); drawLightning(); drawSparks(); if (state.started && state.player) drawCharacter(state.player); drawRainSplashes(); drawPopups(); drawDebugHitboxes(); drawHud(); drawFlash();
   if (!assetsReady && state.started) drawCenterText("ЗАГРУЗКА", "АССЕТЫ");
   if (!state.started) drawCenterText("ПОКА ГРОЗА", "НАЖМИТЕ ИГРАТЬ");
   if (state.countdown > 0 && !state.paused && !state.gameOver) drawCenterText(String(Math.ceil(state.countdown)), "ПРИГОТОВЬСЯ");
-  ctx.restore(); requestAnimationFrame(draw);
+  ctx.restore();
 }
 
 function drawBackground() {
@@ -804,7 +866,7 @@ function drawDebugHitboxes() {
     ctx.strokeRect(box.x, box.y, box.width, box.height);
   };
 
-  drawBox(getPlayerHitbox(state.player), "rgba(85, 255, 120, 0.22)");
+  if (state.player) drawBox(getPlayerHitbox(state.player), "rgba(85, 255, 120, 0.22)");
   for (const crab of state.crabs) {
     if (!crab.active || crab.dead) continue;
     drawBox(getCrabHitbox(crab), "rgba(255, 80, 80, 0.22)");
@@ -848,6 +910,11 @@ function strokeBolt(points) { ctx.beginPath(); ctx.moveTo(points[0].x, points[0]
 function drawSparks() { for (const s of state.sparks) { ctx.fillStyle = s.color; ctx.fillRect(s.x, s.y, 2, 2); } }
 
 function drawCharacter(p) {
+  if (!p) return;
+
+  const character = characters[state.characterId];
+  if (!character || !character.parts) return;
+
   if (p.inv > 0 && Math.floor(p.inv * 12) % 2) return;
 
   const rate = p.anim === "run" ? 13 : 5;
@@ -868,7 +935,7 @@ function drawCharacter(p) {
   ctx.scale(flip, 1);
   ctx.translate(-spriteSize / 2, 0);
 
-  const parts = characters[selectedCharacter].parts;
+  const parts = character.parts;
   const handLift = p.anim === "jump" ? -1 : p.anim === "fall" ? 1 : 0;
   const backHand = p.facing < 0 ? "rightHand" : "leftHand";
   const frontHand = p.facing < 0 ? "leftHand" : "rightHand";
@@ -894,8 +961,8 @@ function drawCharacter(p) {
 }
 
 function drawPlayerPart(parts, name, dx, dy) {
-  const image = parts[name];
-  if (image.complete && image.naturalWidth > 0) {
+  const image = parts?.[name];
+  if (image && image.complete && image.naturalWidth > 0) {
     ctx.drawImage(image, Math.round(dx), Math.round(dy), 32, 32);
   }
 }
@@ -924,7 +991,7 @@ function drawHud() {
   drawPixelText(`ВРЕМЯ ${Math.floor(state.time)}`, 8, 38, "#87b8ff", 1); drawPixelText("P ПАУЗА", 209, 38, "#87b8ff", 1);
 }
 function drawHudPanel(x, y, w, h) { ctx.fillStyle = "#090818"; ctx.fillRect(x, y, w, h); ctx.strokeStyle = "#6d5d82"; ctx.strokeRect(x, y, w, h); ctx.strokeStyle = "#21172d"; ctx.strokeRect(x + 2, y + 2, w - 4, h - 4); }
-function drawCharacterIcon(x, y) { const img = characters[selectedCharacter].head; if (img.complete && img.naturalWidth > 0) ctx.drawImage(img, x - 2, y - 2, 24, 24); }
+function drawCharacterIcon(x, y) { const characterId = state.started ? state.characterId : selectedCharacter; const img = characters[characterId]?.head; if (img?.complete && img.naturalWidth > 0) ctx.drawImage(img, x - 2, y - 2, 24, 24); }
 function drawHeart(x, y, full) { ctx.fillStyle = full ? "#e51f25" : "#48222b"; ctx.fillRect(x + 1, y, 3, 2); ctx.fillRect(x + 6, y, 3, 2); ctx.fillRect(x, y + 2, 10, 5); ctx.fillRect(x + 2, y + 7, 6, 2); ctx.fillRect(x + 4, y + 9, 2, 2); ctx.fillStyle = full ? "#ff7a7a" : "#2b1720"; ctx.fillRect(x + 2, y + 2, 2, 1); }
 
 const font = {
@@ -977,18 +1044,44 @@ function playSound(name) { if (!soundEnabled && name !== "ui") return; const map
 function startMusic() { const a = ensureAudio(); if (!a || a.musicOn) return; a.musicOn = true; const notes=[196,247,294,330,262,220]; const play=()=>{ if (!audio || !audio.musicOn) return; const base=notes[Math.floor(Math.random()*notes.length)]; const t=audio.ctx.currentTime; [1,1.5,2].forEach((m,i)=>{ const o=audio.ctx.createOscillator(); const g=audio.ctx.createGain(); o.type=i?"sine":"triangle"; o.frequency.value=base*m; g.gain.setValueAtTime(.0001,t+i*.08); g.gain.exponentialRampToValueAtTime(.035/(i+1),t+.08+i*.08); g.gain.exponentialRampToValueAtTime(.0001,t+1.4+i*.08); o.connect(g); g.connect(audio.music); o.start(t+i*.08); o.stop(t+1.55+i*.08); }); audio.musicTimer=setTimeout(play, 1800 + Math.random()*900); }; play(); }
 
 function renderCharacterPreview(card) {
-  const c = card.querySelector("canvas"); if (!c) return; const cx = c.getContext("2d"); cx.imageSmoothingEnabled = false; cx.clearRect(0,0,c.width,c.height); cx.save(); cx.scale(3,3); const parts = characters[card.dataset.character].parts; ["tail","leftHand","leftleg","rightleg","body","rightHand","head"].forEach((name)=>{ const img=parts[name]; if (img?.complete && img.naturalWidth>0) cx.drawImage(img,0,0,32,32); }); cx.restore();
+  const c = card.querySelector("canvas"); const character = characters[card.dataset.character]; if (!c || !character) return; const cx = c.getContext("2d"); cx.imageSmoothingEnabled = false; cx.clearRect(0,0,c.width,c.height); cx.save(); cx.scale(3,3); const parts = character.parts; ["tail","leftHand","leftleg","rightleg","body","rightHand","head"].forEach((name)=>{ const img=parts[name]; if (img?.complete && img.naturalWidth>0) cx.drawImage(img,0,0,32,32); }); cx.restore();
 }
 function syncCharacterCards() { characterCards.forEach((card)=>{ const on = card.dataset.character === selectedCharacter; card.classList.toggle("is-selected", on); card.setAttribute("aria-pressed", String(on)); renderCharacterPreview(card); }); }
-characterCards.forEach((card)=>card.addEventListener("click",()=>{ selectedCharacter=card.dataset.character; localStorage.setItem("pokaGrozaCharacter", selectedCharacter); playSound("ui"); syncCharacterCards(); }));
+characterCards.forEach((card)=>card.addEventListener("click",()=>{ if (!characters[card.dataset.character]) return; selectedCharacter=card.dataset.character; localStorage.setItem("pokaGrozaCharacter", selectedCharacter); playSound("ui"); syncCharacterCards(); }));
 [soundButton, startSoundButton, overlaySoundButton].forEach((button) => button?.addEventListener("pointerdown", (event) => { event.preventDefault(); ensureAudio(); setSoundEnabled(!soundEnabled); playSound("ui"); }));
 shareButton.addEventListener("pointerdown", (event) => { event.preventDefault(); const text = `Ого, я набрал ${Math.floor(state.score)} очков в игре «Пока гроза»! Попробуешь побить мой рекорд?`; const share = `https://t.me/share/url?url=${encodeURIComponent(MINI_APP_URL)}&text=${encodeURIComponent(text)}`; if (telegramWebApp?.openTelegramLink) telegramWebApp.openTelegramLink(share); else window.open(share, "_blank", "noopener"); });
 
 let last = performance.now();
-function frame(now) { const dt = Math.min(0.033, (now - last) / 1000); last = now; update(dt); requestAnimationFrame(frame); }
-reset();
+let gameLoopStarted = false;
+function renderFrame() { draw(); }
+function gameLoop(now) {
+  const dt = Math.min(0.033, (now - last) / 1000);
+  last = now;
+
+  try {
+    update(dt);
+    renderFrame();
+  } catch (error) {
+    console.error("Game loop error:", error);
+    console.error("Game start/render error:", error);
+    if (state.started) {
+      state.paused = true;
+      clearInput();
+      syncUi();
+    }
+  } finally {
+    requestAnimationFrame(gameLoop);
+  }
+}
+function startMainLoopOnce() {
+  if (gameLoopStarted) return;
+  gameLoopStarted = true;
+  last = performance.now();
+  requestAnimationFrame(gameLoop);
+}
+resetRoundState();
 bestScore.textContent = String(state.best);
 syncUi();
 updateSoundButtons();
 syncCharacterCards();
-requestAnimationFrame(frame); draw();
+startMainLoopOnce();
