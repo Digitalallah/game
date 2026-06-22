@@ -24,7 +24,7 @@ const SCALE = 4;
 const MAX_LIVES = 3;
 const GRAVITY = 0.34;
 const DEBUG_HITBOXES = false;
-const MINI_APP_URL = "https://example.github.io/game/";
+const MINI_APP_URL = "https://t.me/PokaGrozaBot/pokagroza";
 const TOUCH_MODE = navigator.maxTouchPoints > 0 && matchMedia("(pointer: coarse)").matches;
 document.body.classList.toggle("is-touch", TOUCH_MODE);
 const keys = new Set();
@@ -685,7 +685,6 @@ function drawBackground() {
     ctx.fillRect(0, 0, W, H);
   }
 
-  drawAmbientLightning();
   drawRain();
   drawWaterReflections();
 }
@@ -718,16 +717,6 @@ function drawSkyline(offset, base, color, win, alpha) {
     ctx.fillStyle = color;
   }
   ctx.globalAlpha = 1;
-}
-
-function drawAmbientLightning() {
-  const active = state.lightnings.some((l) => l.warning <= 0);
-  if (!active) return;
-  ctx.fillStyle = "rgba(130,205,255,.20)"; ctx.fillRect(178, 0, 34, 221);
-  ctx.fillStyle = "#eef9ff";
-  let x = 194;
-  for (let y = 8; y < 224; y += 13) { const nx = 194 + Math.sin(y * 0.21 + state.time * 8) * 9; ctx.fillRect(Math.min(x, nx), y, Math.abs(nx - x) + 3, 8); x = nx; }
-  ctx.fillStyle = "#48a7ff"; ctx.fillRect(187, 35, 18, 3); ctx.fillRect(190, 202, 18, 3);
 }
 
 function drawRain() {
