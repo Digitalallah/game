@@ -16,6 +16,7 @@ const overlayBest = document.getElementById("overlay-best");
 const overlayButton = document.getElementById("overlay-button");
 const ctx = canvas.getContext("2d");
 ctx.imageSmoothingEnabled = false;
+startScreen.hidden = true;
 
 const W = 256;
 const H = 256;
@@ -116,7 +117,7 @@ const images = {
     rightleg: loadImage("assets/Player2/right-leg_sob.png", "assets/Player2/righ-leg_sob.png", "assets/player/rightleg.png"),
     body: loadImage("assets/Player2/body_sob.png", "assets/player/body.png"),
     head: loadImage("assets/Player2/head_sob.png", "assets/player/head.png"),
-    umbrella: loadImage("assets/player/umbrella.png")
+    umbrella: loadImage("assets/Player2/right-hand_sob.png", "assets/Player2/left-hand_sob.png")
   }
 };
 
@@ -124,22 +125,47 @@ function loadImage(src, ...fallbacks) {
   const image = new Image();
   const sources = [src, ...fallbacks];
   let index = 0;
-  image.addEventListener("error", () => { if (index < sources.length - 1) image.src = sources[++index]; });
+  image.ready = new Promise((resolve, reject) => {
+    image.addEventListener("load", () => resolve(image));
+    image.addEventListener("error", () => {
+      if (index < sources.length - 1) {
+        index += 1;
+        image.src = sources[index];
+      } else {
+        reject(new Error(`Unable to load image: ${sources.join(", ")}`));
+      }
+    });
+  });
   image.src = sources[index];
   return image;
 }
 
+function imageReady(image) {
+  if (image.complete && image.naturalWidth > 0) return Promise.resolve(image);
+  return image.ready;
+}
+
+const previewImages = [
+  ...Object.values(images.player),
+  ...Object.values(images.dog)
+];
 const requiredImages = [
-  images.background, images.fish1, images.fish2_1, images.fish2_2, images.catHead,
+  images.background, images.fish1, images.fish2_1, images.fish2_2, images.catHead, images.dogHead,
   images.crab.body, images.crab.leftClaw, images.crab.rightClaw, images.crab.leftLeg, images.crab.rightLeg,
-  ...Object.values(images.player)
+  ...previewImages
 ];
 let assetsReady = false;
-Promise.all(requiredImages.map((image) => image.complete && image.naturalWidth > 0 ? Promise.resolve() : new Promise((resolve, reject) => {
-  image.addEventListener("load", resolve, { once: true });
-  image.addEventListener("error", reject, { once: true });
-}))).then(() => { assetsReady = true; playButton.disabled = false; }).catch((error) => { console.error("Asset loading failed", error); playButton.disabled = false; });
 playButton.disabled = true;
+Promise.all(requiredImages.map(imageReady)).then(() => {
+  assetsReady = true;
+  syncCharacterCards();
+  startScreen.hidden = false;
+  playButton.disabled = false;
+}).catch((error) => {
+  console.error("Asset loading failed", error);
+  syncCharacterCards();
+  startScreen.hidden = false;
+});
 
 
 const characters = {
@@ -524,7 +550,7 @@ function updateLightning(dt) {
     const inDanger = overlaps(state.player, warningBox);
     if (l.warning > 0) {
       if (l.wasDanger && !inDanger && l.warning < 0.35 && !l.dodgeBonus) {
-        l.dodgeBonus = true; state.score += 25; state.riskText = 1; state.screenFlash = 0.28; haptic("impact", "light"); addPopup("НА УСАХ!", state.player.x - 9, state.player.y - 8, "#ffef8b"); playSound("close");
+        l.dodgeBonus = true; state.score += 25; state.riskText = 1; state.screenFlash = 0.28; haptic("impact", "light"); addPopup("НА УСАХ!", state.player.x - 9, state.player.y - 8, "#ffef8b");
       }
       l.wasDanger = inDanger; l.warning -= dt;
       if (l.warning <= 0) { state.screenFlash = 0.45; haptic("impact", "heavy"); playSound("lightning"); }
@@ -817,7 +843,8 @@ function drawLightning() {
       if (i > 8) break;
     }
     ctx.lineWidth = 1;
-    ctx.fillStyle = "#eaf8ff"; ctx.fillRect(l.x - 10, l.y + 8, 20, 4); ctx.fillStyle = "rgba(130,205,255,.6)"; ctx.fillRect(l.x - 14, Math.min(228, l.y + 18), 28, 2); ctx.fillRect(l.x - 8, Math.min(236, l.y + 25), 16, 1);
+    ctx.fillStyle = "rgba(185,226,255,.34)";
+    ctx.fillRect(l.x - 5, l.y + 8, 10, 12);
   }
 }
 function strokeBolt(points) { ctx.beginPath(); ctx.moveTo(points[0].x, points[0].y); for (const p of points.slice(1)) ctx.lineTo(p.x, p.y); ctx.stroke(); }
@@ -945,7 +972,7 @@ function updateSoundButtons() { const text = soundEnabled ? "ЗВУК ВКЛ" : 
 function setMusicDucked(amount) { if (!audio) return; audio.duck = amount; ramp(audio.music, 0.16 * amount, 0.45); }
 function tone(freq, dur, when = 0, type = "sine", vol = 0.18) { const a = ensureAudio(); if (!a || !soundEnabled) return; const t = a.ctx.currentTime + when; const o = a.ctx.createOscillator(); const g = a.ctx.createGain(); o.type = type; o.frequency.setValueAtTime(freq, t); g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(vol, t + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, t + dur); o.connect(g); g.connect(a.sfx); o.start(t); o.stop(t + dur + 0.04); }
 function noise(dur, vol = 0.12) { const a = ensureAudio(); if (!a || !soundEnabled) return; const buffer = a.ctx.createBuffer(1, Math.ceil(a.ctx.sampleRate * dur), a.ctx.sampleRate); const data = buffer.getChannelData(0); for (let i=0;i<data.length;i++) data[i]=(Math.random()*2-1)*Math.exp(-i/data.length*4); const src=a.ctx.createBufferSource(); src.buffer=buffer; const filter=a.ctx.createBiquadFilter(); filter.type="bandpass"; filter.frequency.value=900; const g=a.ctx.createGain(); g.gain.value=vol; src.connect(filter); filter.connect(g); g.connect(a.sfx); src.start(); src.stop(a.ctx.currentTime+dur); }
-function playSound(name) { if (!soundEnabled && name !== "ui") return; const map={fish:[523,659],gold:[659,784,988],heart:[392,523,659],close:[587,740,880]}; if (map[name]) map[name].forEach((f,i)=>tone(f,.16,i*.07,"triangle",.13)); else if (name==="jump") tone(220,.12,0,"sine",.10); else if (name==="land") tone(110,.08,0,"triangle",.08); else if (name==="hurt") tone(150,.18,0,"sawtooth",.09); else if (name==="lightning") { noise(.28,.13); tone(70,.22,0,"sine",.13); } else if (name==="zapCrab") { noise(.12,.10); tone(260,.1,0,"square",.08); } else if (name==="ui") tone(620,.045,0,"square",.035); }
+function playSound(name) { if (!soundEnabled && name !== "ui") return; const map={fish:[523,659],gold:[659,784,988],heart:[392,523,659]}; if (map[name]) map[name].forEach((f,i)=>tone(f,.16,i*.07,"triangle",.13)); else if (name==="jump") tone(220,.12,0,"sine",.10); else if (name==="land") tone(110,.08,0,"triangle",.08); else if (name==="hurt") tone(150,.18,0,"sawtooth",.09); else if (name==="lightning") { noise(.28,.13); tone(70,.22,0,"sine",.13); } else if (name==="zapCrab") { noise(.12,.10); tone(260,.1,0,"square",.08); } else if (name==="ui") tone(620,.045,0,"square",.035); }
 function startMusic() { const a = ensureAudio(); if (!a || a.musicOn) return; a.musicOn = true; const notes=[196,247,294,330,262,220]; const play=()=>{ if (!audio || !audio.musicOn) return; const base=notes[Math.floor(Math.random()*notes.length)]; const t=audio.ctx.currentTime; [1,1.5,2].forEach((m,i)=>{ const o=audio.ctx.createOscillator(); const g=audio.ctx.createGain(); o.type=i?"sine":"triangle"; o.frequency.value=base*m; g.gain.setValueAtTime(.0001,t+i*.08); g.gain.exponentialRampToValueAtTime(.035/(i+1),t+.08+i*.08); g.gain.exponentialRampToValueAtTime(.0001,t+1.4+i*.08); o.connect(g); g.connect(audio.music); o.start(t+i*.08); o.stop(t+1.55+i*.08); }); audio.musicTimer=setTimeout(play, 1800 + Math.random()*900); }; play(); }
 
 function renderCharacterPreview(card) {
