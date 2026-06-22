@@ -3,26 +3,38 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
-  <title>Котогроза</title>
+  <title>Пока гроза</title>
   <script src="https://telegram.org/js/telegram-web-app.js?62"></script>
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-  <main class="game-shell" aria-label="Котогроза">
+  <main class="game-shell" aria-label="Пока гроза">
     <section id="start-screen" class="start-screen" aria-labelledby="start-title">
-      <h1 id="start-title">КОТОГРОЗА</h1>
+      <h1 id="start-title">ПОКА ГРОЗА</h1>
       <p class="start-best">Лучший результат: <span id="best-score">0</span></p>
+      <div id="character-select" class="character-select" aria-label="Выбор персонажа">
+        <button class="character-card" type="button" data-character="cat" aria-pressed="true">
+          <canvas class="character-card__preview" width="96" height="96" aria-hidden="true"></canvas>
+          <span>Кот</span>
+        </button>
+        <button class="character-card" type="button" data-character="dog" aria-pressed="false">
+          <canvas class="character-card__preview" width="96" height="96" aria-hidden="true"></canvas>
+          <span>Пес</span>
+        </button>
+      </div>
       <button id="play-button" class="play-button" type="button">ИГРАТЬ</button>
+      <button id="start-sound-button" class="sound-button" type="button">ЗВУК ВКЛ</button>
       <p class="start-hint">Стрелки/WASD — движение и прыжок. P/Esc — пауза. На телефоне: ◀ ▶, ⤴ и II.</p>
     </section>
     <div class="canvas-wrap">
-      <canvas id="game" width="1024" height="1024" aria-label="Игра Котогроза" role="img"></canvas>
+      <canvas id="game" width="1024" height="1024" aria-label="Игра Пока гроза" role="img"></canvas>
       <button id="pause-button" class="pause-button" type="button" aria-label="Пауза" hidden>II</button>
       <div id="game-overlay" class="game-overlay" hidden>
         <h2 id="overlay-title" class="game-overlay__title">ПАУЗА</h2>
         <p id="overlay-score" class="game-overlay__score" hidden></p>
         <p id="overlay-best" class="game-overlay__score" hidden></p>
         <button id="overlay-button" class="game-overlay__button" type="button">ПРОДОЛЖИТЬ</button>
+        <button id="share-button" class="game-overlay__button game-overlay__button--share" type="button" hidden>ПОДЕЛИТЬСЯ РЕЗУЛЬТАТОМ</button>
       </div>
     </div>
     <div class="touch-controls" aria-label="Сенсорное управление">
@@ -31,6 +43,10 @@
         <button class="touch-button" type="button" data-control="right" aria-label="Вправо">▶</button>
       </div>
       <button class="touch-button touch-button--jump" type="button" data-control="jump" aria-label="Прыжок">⤴</button>
+      <div class="touch-controls__bottom">
+        <button id="mobile-pause-button" class="touch-button touch-button--wide" type="button" aria-label="Пауза">II ПАУЗА</button>
+        <button id="sound-button" class="touch-button touch-button--wide" type="button">ЗВУК ВКЛ</button>
+      </div>
     </div>
   </main>
   <script src="src/main.js"></script>
