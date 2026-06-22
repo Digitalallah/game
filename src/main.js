@@ -109,15 +109,16 @@ const images = {
     rightleg: loadImage("assets/player/rightleg.png"),
     body: loadImage("assets/player/body.png"),
     head: loadImage("assets/player/head.png"),
-    umbrella: loadImage("assets/player/umbrella.png")
+    rightHand: loadImage("assets/player/umbrella.png")
   },
   dog: {
     tail: loadImage("assets/Player2/tail_sob.png", "assets/player/tail.png"),
+    leftHand: loadImage("assets/Player2/left-hand_sob.png"),
     leftleg: loadImage("assets/Player2/left-leg_sob.png", "assets/player/leftleg.png"),
     rightleg: loadImage("assets/Player2/right-leg_sob.png", "assets/Player2/righ-leg_sob.png", "assets/player/rightleg.png"),
     body: loadImage("assets/Player2/body_sob.png", "assets/player/body.png"),
-    head: loadImage("assets/Player2/head_sob.png", "assets/player/head.png"),
-    umbrella: loadImage("assets/Player2/right-hand_sob.png", "assets/Player2/left-hand_sob.png")
+    rightHand: loadImage("assets/Player2/right-hand_sob.png"),
+    head: loadImage("assets/Player2/head_sob.png", "assets/player/head.png")
   }
 };
 
@@ -513,9 +514,10 @@ function updatePlayer(dt) {
   p.vx = (right - left) * 1.55;
   if (p.vx) p.facing = Math.sign(p.vx);
   if (jump && p.grounded) { p.vy = -6.2; p.grounded = false; playSound("jump"); }
+  const wasGrounded = p.grounded;
   p.vy += GRAVITY; p.x += p.vx; p.x = Math.max(3, Math.min(W - p.w - 3, p.x));
   p.y += p.vy; p.grounded = false;
-  for (const plat of platforms) if (overlaps(p, plat) && p.vy >= 0 && p.y + p.h - p.vy <= plat.y + 2) { const wasGrounded = p.grounded; p.y = plat.y - p.h; p.vy = 0; p.grounded = true; if (!wasGrounded) playSound("land"); }
+  for (const plat of platforms) if (overlaps(p, plat) && p.vy >= 0 && p.y + p.h - p.vy <= plat.y + 2) { p.y = plat.y - p.h; p.vy = 0; p.grounded = true; if (!wasGrounded) playSound("land"); }
   if (p.y > H + 20) hurtPlayer();
   const nextAnim = p.hurt > 0 ? "hurt" : p.collect > 0 ? "collect" : !p.grounded ? (p.vy < 0 ? "jump" : "fall") : Math.abs(p.vx) > 0 ? "run" : "idle";
   if (nextAnim !== p.anim) { p.anim = nextAnim; p.animTime = 0; } else p.animTime += dt;
@@ -843,8 +845,10 @@ function drawLightning() {
       if (i > 8) break;
     }
     ctx.lineWidth = 1;
-    ctx.fillStyle = "rgba(185,226,255,.34)";
-    ctx.fillRect(l.x - 5, l.y + 8, 10, 12);
+    ctx.fillStyle = "rgba(185,226,255,.30)";
+    ctx.fillRect(l.x - 2, 0, 4, l.y + 18);
+    ctx.fillStyle = "rgba(247,251,255,.42)";
+    ctx.fillRect(l.x - 1, l.y + 6, 2, 14);
   }
 }
 function strokeBolt(points) { ctx.beginPath(); ctx.moveTo(points[0].x, points[0].y); for (const p of points.slice(1)) ctx.lineTo(p.x, p.y); ctx.stroke(); }
@@ -872,12 +876,16 @@ function drawCharacter(p) {
   ctx.translate(-spriteSize / 2, 0);
 
   const parts = characters[selectedCharacter].parts;
+  const handLift = p.anim === "jump" ? -1 : p.anim === "fall" ? 1 : 0;
+  const backHand = p.facing < 0 ? "rightHand" : "leftHand";
+  const frontHand = p.facing < 0 ? "leftHand" : "rightHand";
   drawPlayerPart(parts, "tail", -2 - stride * 0.5, p.anim === "run" ? -stride : 0);
+  drawPlayerPart(parts, backHand, p.anim === "run" ? -stride * 0.5 : 0, handLift);
   drawPlayerPart(parts, "leftleg", -stride, p.anim === "run" ? Math.max(0, stride) : 0);
   drawPlayerPart(parts, "rightleg", stride, p.anim === "run" ? Math.max(0, -stride) : 0);
   drawPlayerPart(parts, "body", 0, p.anim === "collect" ? -1 : 0);
+  drawPlayerPart(parts, frontHand, p.anim === "run" ? stride * 0.5 : 0, handLift);
   drawPlayerPart(parts, "head", p.anim === "hurt" ? -1 : 0, p.anim === "run" ? idleBob : 0);
-  drawPlayerPart(parts, "umbrella", p.anim === "run" ? stride * 0.5 : 0, p.anim === "jump" ? -1 : 0);
 
   if (p.anim === "hurt") {
     ctx.fillStyle = "#ffef8b";
@@ -976,7 +984,7 @@ function playSound(name) { if (!soundEnabled && name !== "ui") return; const map
 function startMusic() { const a = ensureAudio(); if (!a || a.musicOn) return; a.musicOn = true; const notes=[196,247,294,330,262,220]; const play=()=>{ if (!audio || !audio.musicOn) return; const base=notes[Math.floor(Math.random()*notes.length)]; const t=audio.ctx.currentTime; [1,1.5,2].forEach((m,i)=>{ const o=audio.ctx.createOscillator(); const g=audio.ctx.createGain(); o.type=i?"sine":"triangle"; o.frequency.value=base*m; g.gain.setValueAtTime(.0001,t+i*.08); g.gain.exponentialRampToValueAtTime(.035/(i+1),t+.08+i*.08); g.gain.exponentialRampToValueAtTime(.0001,t+1.4+i*.08); o.connect(g); g.connect(audio.music); o.start(t+i*.08); o.stop(t+1.55+i*.08); }); audio.musicTimer=setTimeout(play, 1800 + Math.random()*900); }; play(); }
 
 function renderCharacterPreview(card) {
-  const c = card.querySelector("canvas"); if (!c) return; const cx = c.getContext("2d"); cx.imageSmoothingEnabled = false; cx.clearRect(0,0,c.width,c.height); cx.save(); cx.scale(3,3); const parts = characters[card.dataset.character].parts; ["tail","leftleg","rightleg","body","head","umbrella"].forEach((name)=>{ const img=parts[name]; if (img?.complete && img.naturalWidth>0) cx.drawImage(img,0,0,32,32); }); cx.restore();
+  const c = card.querySelector("canvas"); if (!c) return; const cx = c.getContext("2d"); cx.imageSmoothingEnabled = false; cx.clearRect(0,0,c.width,c.height); cx.save(); cx.scale(3,3); const parts = characters[card.dataset.character].parts; ["tail","leftHand","leftleg","rightleg","body","rightHand","head"].forEach((name)=>{ const img=parts[name]; if (img?.complete && img.naturalWidth>0) cx.drawImage(img,0,0,32,32); }); cx.restore();
 }
 function syncCharacterCards() { characterCards.forEach((card)=>{ const on = card.dataset.character === selectedCharacter; card.classList.toggle("is-selected", on); card.setAttribute("aria-pressed", String(on)); renderCharacterPreview(card); }); }
 characterCards.forEach((card)=>card.addEventListener("click",()=>{ selectedCharacter=card.dataset.character; localStorage.setItem("pokaGrozaCharacter", selectedCharacter); playSound("ui"); syncCharacterCards(); }));
