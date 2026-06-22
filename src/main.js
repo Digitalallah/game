@@ -7,6 +7,7 @@ const pauseButton = document.getElementById("pause-button");
 const mobilePauseButton = document.getElementById("mobile-pause-button");
 const soundButton = document.getElementById("sound-button");
 const startSoundButton = document.getElementById("start-sound-button");
+const overlaySoundButton = document.getElementById("overlay-sound-button");
 const shareButton = document.getElementById("share-button");
 const characterCards = [...document.querySelectorAll("[data-character]")];
 const gameOverlay = document.getElementById("game-overlay");
@@ -207,7 +208,6 @@ const state = {
   fishes: [],
   popups: [],
   sparks: [],
-  riskText: 0,
   rain: [],
   cameraShake: 0,
   screenFlash: 0,
@@ -234,7 +234,6 @@ function reset() {
   state.fishes = [];
   state.popups = [];
   state.sparks = [];
-  state.riskText = 0;
   state.cameraShake = 0;
   state.screenFlash = 0;
   state.hiddenPaused = false;
@@ -286,6 +285,7 @@ function syncUi() {
     overlayBest.textContent = `РЕКОРД: ${state.best}`;
   }
   overlayButton.textContent = state.gameOver ? "НАЧАТЬ ЗАНОВО" : "ПРОДОЛЖИТЬ";
+  overlaySoundButton.hidden = state.gameOver;
   shareButton.hidden = !state.gameOver;
 }
 
@@ -469,8 +469,7 @@ function nearestSurfaceY(x, y) {
 function spawnDropFromCrab(c) {
   const x = Math.max(12, Math.min(W - 12, c.x + c.w / 2));
   const surface = nearestSurfaceY(x, c.y);
-  if (state.lives >= MAX_LIVES) spawnFish(true, { x: x - 6, y: surface });
-  else state.drops.push({ type: "heart", x: x - 5, y: c.y + 4, w: 10, h: 10, vy: -1, targetY: surface - 11, life: 8, alive: true });
+  state.drops.push({ type: "heart", x: x - 5, y: c.y + 4, w: 10, h: 10, vy: -1, targetY: surface - 11, life: 8, alive: true });
 }
 
 function startLightning() {
@@ -493,7 +492,6 @@ function update(dt) {
   if (!state.started || state.paused || state.gameOver) return;
   if (state.countdown > 0) { state.countdown = Math.max(0, state.countdown - dt); return; }
   state.time += dt; state.score += dt * 3; updateAntiCamp(dt);
-  state.riskText = Math.max(0, state.riskText - dt);
   state.cameraShake = Math.max(0, state.cameraShake - dt);
   state.screenFlash = Math.max(0, state.screenFlash - dt * 3.6);
   state.player.inv = Math.max(0, state.player.inv - dt);
@@ -532,7 +530,7 @@ function updateFishes(dt) {
     if (f.age > f.ttl) f.alive = false;
     if (f.alive && overlaps(state.player, f)) {
       f.alive = false; state.player.collect = 0.22;
-      if (f.risky) { playSound("gold"); haptic("notification", "success"); const late = state.lightnings.some((l) => l.warning > 0 && l.warning < 0.35 && !l.dodgeBonus); const pts = 50; state.score += pts; if (late) state.riskText = 1; addPopup(`+${pts}`, f.x - 2, f.y - 4, "#ffcf4a"); addSparks(f.x + 5, f.y + 3, "#ffcf4a", 12); }
+      if (f.risky) { playSound("gold"); haptic("notification", "success"); const pts = 50; state.score += pts; addPopup(`+${pts}`, f.x - 2, f.y - 4, "#ffcf4a"); addSparks(f.x + 5, f.y + 3, "#ffcf4a", 12); }
       else { playSound("fish"); haptic("impact", "light"); state.score += 10; addPopup("+10", f.x - 2, f.y - 4, "#7ee8ff"); addSparks(f.x + 5, f.y + 3, "#7ee8ff", 7); }
     }
   }
@@ -552,7 +550,7 @@ function updateLightning(dt) {
     const inDanger = overlaps(state.player, warningBox);
     if (l.warning > 0) {
       if (l.wasDanger && !inDanger && l.warning < 0.35 && !l.dodgeBonus) {
-        l.dodgeBonus = true; state.score += 25; state.riskText = 1; state.screenFlash = 0.28; haptic("impact", "light"); addPopup("НА УСАХ!", state.player.x - 9, state.player.y - 8, "#ffef8b");
+        l.dodgeBonus = true; state.score += 25; state.screenFlash = 0.28; haptic("impact", "light"); addPopup("+25", state.player.x, state.player.y - 8, "#ffef8b"); addSparks(state.player.x + state.player.w / 2, state.player.y + 8, "#ffef8b", 10);
       }
       l.wasDanger = inDanger; l.warning -= dt;
       if (l.warning <= 0) { state.screenFlash = 0.45; haptic("impact", "heavy"); playSound("lightning"); }
@@ -604,7 +602,14 @@ function checkCrabCollisions() {
 }
 
 function updateDrops(dt) {
-  for (const d of state.drops) { d.life -= dt; d.vy += GRAVITY * dt * 18; d.y = Math.min(d.targetY, d.y + d.vy); if (d.y >= d.targetY) d.vy = 0; if (overlaps(state.player, d)) { d.alive = false; if (state.lives < MAX_LIVES) { state.lives++; playSound("heart"); haptic("notification", "success"); addPopup("+1", d.x, d.y - 4, "#ff7a7a"); } } }
+  for (const d of state.drops) {
+    d.life -= dt; d.vy += GRAVITY * dt * 18; d.y = Math.min(d.targetY, d.y + d.vy); if (d.y >= d.targetY) d.vy = 0;
+    if (overlaps(state.player, d)) {
+      d.alive = false; playSound("heart"); haptic("notification", "success"); addSparks(d.x + 5, d.y + 5, "#ff7a7a", 10);
+      if (state.lives < MAX_LIVES) { state.lives++; addPopup("+1", d.x, d.y - 4, "#ff7a7a"); }
+      else { state.score += 50; addPopup("+50", d.x, d.y - 4, "#ff7a7a"); }
+    }
+  }
   state.drops = state.drops.filter((d) => d.alive && d.life > 0);
 }
 
@@ -661,7 +666,6 @@ function draw() {
   if (!assetsReady && state.started) drawCenterText("ЗАГРУЗКА", "АССЕТЫ");
   if (!state.started) drawCenterText("ПОКА ГРОЗА", "НАЖМИТЕ ИГРАТЬ");
   if (state.countdown > 0 && !state.paused && !state.gameOver) drawCenterText(String(Math.ceil(state.countdown)), "ПРИГОТОВЬСЯ");
-  if (state.riskText > 0) drawPixelText("РИСК!", 106, 104, "#ffcf4a", 2);
   ctx.restore(); requestAnimationFrame(draw);
 }
 
@@ -965,7 +969,7 @@ function ensureAudio() {
 }
 function ramp(gain, value, time = 0.25) { if (!audio) return; gain.gain.cancelScheduledValues(audio.ctx.currentTime); gain.gain.linearRampToValueAtTime(value, audio.ctx.currentTime + time); }
 function setSoundEnabled(enabled) { soundEnabled = enabled; localStorage.setItem("pokaGrozaSound", enabled ? "on" : "off"); if (audio) ramp(audio.master, enabled ? 0.85 : 0, 0.35); updateSoundButtons(); }
-function updateSoundButtons() { const text = soundEnabled ? "ЗВУК ВКЛ" : "ЗВУК ВЫКЛ"; soundButton.textContent = text; startSoundButton.textContent = text; }
+function updateSoundButtons() { const text = soundEnabled ? "ЗВУК ВКЛ" : "ЗВУК ВЫКЛ"; [soundButton, startSoundButton, overlaySoundButton].forEach((button) => { if (button) button.textContent = text; }); }
 function setMusicDucked(amount) { if (!audio) return; audio.duck = amount; ramp(audio.music, 0.16 * amount, 0.45); }
 function tone(freq, dur, when = 0, type = "sine", vol = 0.18) { const a = ensureAudio(); if (!a || !soundEnabled) return; const t = a.ctx.currentTime + when; const o = a.ctx.createOscillator(); const g = a.ctx.createGain(); o.type = type; o.frequency.setValueAtTime(freq, t); g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(vol, t + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, t + dur); o.connect(g); g.connect(a.sfx); o.start(t); o.stop(t + dur + 0.04); }
 function noise(dur, vol = 0.12) { const a = ensureAudio(); if (!a || !soundEnabled) return; const buffer = a.ctx.createBuffer(1, Math.ceil(a.ctx.sampleRate * dur), a.ctx.sampleRate); const data = buffer.getChannelData(0); for (let i=0;i<data.length;i++) data[i]=(Math.random()*2-1)*Math.exp(-i/data.length*4); const src=a.ctx.createBufferSource(); src.buffer=buffer; const filter=a.ctx.createBiquadFilter(); filter.type="bandpass"; filter.frequency.value=900; const g=a.ctx.createGain(); g.gain.value=vol; src.connect(filter); filter.connect(g); g.connect(a.sfx); src.start(); src.stop(a.ctx.currentTime+dur); }
@@ -977,7 +981,7 @@ function renderCharacterPreview(card) {
 }
 function syncCharacterCards() { characterCards.forEach((card)=>{ const on = card.dataset.character === selectedCharacter; card.classList.toggle("is-selected", on); card.setAttribute("aria-pressed", String(on)); renderCharacterPreview(card); }); }
 characterCards.forEach((card)=>card.addEventListener("click",()=>{ selectedCharacter=card.dataset.character; localStorage.setItem("pokaGrozaCharacter", selectedCharacter); playSound("ui"); syncCharacterCards(); }));
-[soundButton,startSoundButton].forEach((button)=>button.addEventListener("click",()=>{ ensureAudio(); setSoundEnabled(!soundEnabled); playSound("ui"); }));
+[soundButton, startSoundButton, overlaySoundButton].forEach((button) => button?.addEventListener("pointerdown", (event) => { event.preventDefault(); ensureAudio(); setSoundEnabled(!soundEnabled); playSound("ui"); }));
 shareButton.addEventListener("pointerdown", (event) => { event.preventDefault(); const text = `Ого, я набрал ${Math.floor(state.score)} очков в игре «Пока гроза»! Попробуешь побить мой рекорд?`; const share = `https://t.me/share/url?url=${encodeURIComponent(MINI_APP_URL)}&text=${encodeURIComponent(text)}`; if (telegramWebApp?.openTelegramLink) telegramWebApp.openTelegramLink(share); else window.open(share, "_blank", "noopener"); });
 
 let last = performance.now();
